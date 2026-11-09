@@ -46,6 +46,10 @@ Deux pages Grist, un même widget :
 
 Onglet **Suivi → Ajouter une consommation** (ou le même bouton dans la fiche d'une personne, qui présélectionne celle-ci) : choisissez le consommateur, la date et les quantités. Le formulaire reste ouvert pour enchaîner plusieurs saisies. La ligne est créée dans `Conso_Consommations` avec le commentaire « Saisie manuelle ». Réservé au gestionnaire par les permissions du § 4 (création ouverte à tous sur cette table : voir § 4.5).
 
+### Enregistrer un règlement
+
+Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le solde dû est indiqué dans la liste et proposé comme montant), la date, le montant et des observations (virement, espèces, chèque n°…). La fenêtre reste ouverte pour enchaîner. La ligne est créée dans `Conso_Reglements` ; un montant supérieur au solde donne un avoir. Dans la fiche d'une personne, on peut aussi enregistrer un règlement et supprimer un règlement saisi par erreur (suppression en deux clics). Écriture réservée au gestionnaire (§ 4.5).
+
 ## 3. Schéma des tables
 
 Toutes les colonnes sont créées par le bouton. Les identifiants sont fixes (le widget les lit par leur nom).

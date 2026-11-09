@@ -8,7 +8,7 @@
   var S = {
     tab: VUE_REGLER ? 'regler' : 'suivi', names: [], cols: {}, denied: {}, loaded: false, busy: false, err: '',
     cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], meta: null,
-    bal: null, q: '', f: '', detail: null, add: null, draft: null, schema: []
+    bal: null, q: '', f: '', detail: null, add: null, rg: null, draft: null, schema: []
   };
   var qrLib = null;
 
@@ -60,7 +60,7 @@
       await load(); S.err = ''; if (okMsg) toast('ok', okMsg);
       return r && r.retValues ? r.retValues : [];
     } catch (e) { toast('error', 'Enregistrement impossible : ' + errText(e)); try { await load(); } catch (e2) {} return null; }
-    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); }
+    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); else if (S.rg && $('modal').open) renderRg(); }
   }
 
   /* ---------- QR codes ---------- */
@@ -93,7 +93,7 @@
       (c.numero ? '<dt>Numéro Wero</dt><dd>' + esc(c.numero) + '</dd>' : '') + '</dl></section>';
   }
   function showPay(title, opt) {
-    S.detail = null; S.add = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', C.weroPayload(S.cfg, opt || {}));
   }
   function formBlock() {
@@ -103,7 +103,7 @@
     return '<p><a class="btn" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Déclarer une consommation</a> <button type="button" class="btn sec" data-act="form-qr">QR code du formulaire</button></p>';
   }
   function showFormQr() {
-    S.detail = null; S.add = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', S.cfg.lien);
   }
 
@@ -136,7 +136,7 @@
       '<div class="kpis">' + [[C.eur(t.duCents), 'dû'], [C.eur(t.paidCents), 'réglé'], [C.eur(t.resteCents), 'reste dû']].map(function (k, i) { return '<div class="kpi' + (i === 2 && t.resteCents > 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
       '<div class="toolbar"><label class="sr" for="q">Rechercher</label><input id="q" type="search" placeholder="Rechercher un consommateur" value="' + esc(S.q) + '">' +
       '<label class="sr" for="f">Filtre</label><select id="f">' + [['', 'Tous'], ['due', 'Reste à régler'], ['ok', 'À jour'], ['over', 'Avoir'], ['none', 'Sans activité']].map(function (o) { return '<option value="' + o[0] + '"' + (S.f === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
-      '<button type="button" class="btn" data-act="add-open"' + (hasTables() && S.types.some(function (t) { return t.actif; }) ? '' : ' disabled') + '>Ajouter une consommation</button><button type="button" class="btn sec" data-act="export">Exporter en CSV</button>' + '</div>' + formBlock() + '<div id="suivi-table">' + tableSuivi() + '</div>';
+      '<button type="button" class="btn" data-act="add-open"' + (hasTables() && S.types.some(function (t) { return t.actif; }) ? '' : ' disabled') + '>Ajouter une consommation</button><button type="button" class="btn" data-act="rg-open"' + (hasTables() ? '' : ' disabled') + '>Enregistrer un règlement</button><button type="button" class="btn sec" data-act="export">Exporter en CSV</button>' + '</div>' + formBlock() + '<div id="suivi-table">' + tableSuivi() + '</div>';
   }
   function visibleRows() {
     var q = C.norm(S.q);
@@ -160,8 +160,8 @@
 
   /* ---------- Fiche d'un consommateur ---------- */
   function openModal(title, html) { $('modal-title').textContent = title; $('modal-body').innerHTML = html; if (!$('modal').open) $('modal').showModal(); }
-  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; }
-  function openDetail(id) { S.add = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
+  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; S.rg = null; }
+  function openDetail(id) { S.add = null; S.rg = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
   function renderDetail() {
     var d = S.detail, o = d && bal(d.id); if (!o) return closeModal();
     var T2 = S.types, act = T2.filter(function (t) { return t.actif; }), today = localIso();
@@ -198,7 +198,7 @@
   }
 
   /* Saisie manuelle rapide : choisir la personne, la date et les quantités ; le formulaire reste ouvert pour enchaîner. */
-  function openAdd(id) { S.detail = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '' }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  function openAdd(id) { S.detail = null; S.rg = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '' }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
   function renderAdd() {
     var a = S.add; if (!a) return;
     var act = S.types.filter(function (t) { return t.actif; }), who = S.bal.rows.filter(function (o) { return o.actif || o.id === a.id; });
@@ -220,6 +220,35 @@
     var o = bal(a.id), r = await write([['AddRecord', T.CONSOMMATIONS, null, f]]);
     if (r && S.add) { a.q = {}; a.ok = 'Consommation ajoutée pour ' + (o ? o.nom : '') + '. Vous pouvez en saisir une autre.'; }
     renderAdd(); var q0 = $('am-q0'); if (q0) q0.focus();
+  }
+
+  /* Saisie rapide d'un règlement : personne, date, montant (proposé : le solde dû), observations ; reste ouvert pour enchaîner. */
+  function openRg(id) {
+    S.detail = null; S.add = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '' };
+    var o = bal(S.rg.id); if (o && o.soldeCents > 0) S.rg.amt = (o.soldeCents / 100).toFixed(2);
+    renderRg(); var f = $(S.rg.id ? 'rg-amt' : 'rg-who'); if (f) f.focus();
+  }
+  function renderRg() {
+    var a = S.rg; if (!a) return;
+    var who = S.bal.rows.filter(function (o) { return o.actif || o.nConso || o.nPay || o.id === a.id; }), o = bal(a.id);
+    openModal('Enregistrer un règlement',
+      (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
+      '<div class="grid"><div class="field"><label for="rg-who">Consommateur</label><select id="rg-who"><option value="0">— choisir —</option>' + who.map(function (x) { return '<option value="' + x.id + '"' + (x.id === a.id ? ' selected' : '') + '>' + esc(x.nom || '(sans nom)') + (x.soldeCents > 0 ? ' — doit ' + esc(C.eur(x.soldeCents)) : '') + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label for="rg-date">Date</label><input type="date" id="rg-date" value="' + esc(a.date) + '"></div>' +
+      '<div class="field"><label for="rg-amt">Montant (€)</label><input id="rg-amt" inputmode="decimal" value="' + esc(a.amt) + '"></div>' +
+      '<div class="field"><label for="rg-obs">Observations</label><input id="rg-obs" value="' + esc(a.obs) + '" placeholder="Virement, espèces, chèque n°…"></div></div>' +
+      (o ? '<p class="hint">Solde actuel : ' + (o.soldeCents < 0 ? 'avoir ' + esc(C.eur(-o.soldeCents)) : esc(C.eur(o.soldeCents)) + ' dû') + '.</p>' : '') +
+      '<p><button type="button" class="btn" data-act="rg-save">Enregistrer</button> <button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+  }
+  async function rgSave() {
+    var a = S.rg; if (!a) return;
+    a.id = Number($('rg-who').value) || 0; a.date = $('rg-date').value; a.amt = $('rg-amt').value; a.obs = $('rg-obs').value.trim(); a.ok = '';
+    var amt = C.parseAmount(a.amt), day = C.utcDay(a.date);
+    a.err = !a.id ? 'Choisissez le consommateur.' : !day ? 'Indiquez la date du règlement.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+    if (a.err) return renderRg();
+    var o = bal(a.id), r = await write([['AddRecord', T.REGLEMENTS, null, { Date: day, Consommateur: a.id, Montant: amt, Observations: a.obs }]]);
+    if (r && S.rg) { a.ok = 'Règlement de ' + C.eur(C.cents(amt)) + ' enregistré pour ' + (o ? o.nom : '') + '.'; a.id = 0; a.amt = ''; a.obs = ''; }
+    renderRg(); var f = $('rg-who'); if (f) f.focus();
   }
 
   function exportCsv() {
@@ -378,6 +407,8 @@
     if (a === 'form-qr') return showFormQr();
     if (a === 'add-open') return openAdd(id || 0);
     if (a === 'add-save') return addSave();
+    if (a === 'rg-open') return openRg(id || 0);
+    if (a === 'rg-save') return rgSave();
     if (a === 'export') return exportCsv();
     if (a === 'create') return createTables();
     if (a === 'save-cfg') return saveCfg();
@@ -398,11 +429,12 @@
   });
   document.addEventListener('change', function (e) {
     var t = e.target;
+    if (t.id === 'rg-who' && S.rg) { var o = bal(Number(t.value)), am = $('rg-amt'); if (am && !am.value.trim() && o && o.soldeCents > 0) am.value = (o.soldeCents / 100).toFixed(2); return; }
     if (t.id === 'f') { S.f = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);
     if (t.getAttribute && t.getAttribute('data-ty')) return editType(t);
   });
-  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; });
+  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; S.rg = null; });
   $('refresh').addEventListener('click', function () { refresh(); });
 
   /* ---------- Démarrage ---------- */
