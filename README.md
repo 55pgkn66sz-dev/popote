@@ -54,6 +54,10 @@ Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le 
 
 **Règlements en lot** : choisissez « En lot (plusieurs consommateurs) ». La liste reprend les personnes qui doivent encore de l'argent, toutes cochées, avec le solde dû comme montant reçu. Modifiez un montant pour un paiement partiel, décochez ceux qui n'ont pas payé, puis enregistrez : la date et les observations sont communes, et un règlement est créé par personne cochée, en une seule opération (tout est enregistré ou rien). Un montant invalide bloque l'enregistrement et nomme la personne concernée. Après enregistrement, la liste ne garde que les soldes restants.
 
+### Modifier une ligne
+
+Chaque achat (onglet **Achats**), chaque règlement et chaque consommation (dans la fiche d'une personne) a un bouton **Modifier** à côté de **Supprimer**. La fenêtre reprend les valeurs actuelles : date, montant, observations, et pour une consommation le consommateur et les quantités de tous les types (y compris archivés). Les mêmes contrôles que pour la saisie s'appliquent, et l'on peut changer le consommateur d'un règlement ou d'une consommation saisi(e) pour la mauvaise personne. Après enregistrement, la fiche de la personne s'affiche à nouveau. La modification exige le droit de modification de la table (gestionnaire, § 4).
+
 ### Enregistrer les achats
 
 Onglet **Achats** : enregistrez ce que le gestionnaire achète pour la popote (café, lait, denrées…) : date, achat, fournisseur (facultatif), montant, observations. La date et le fournisseur restent préremplis pour enchaîner plusieurs achats. La liste peut être exportée en CSV, et un achat saisi par erreur se supprime en deux clics.

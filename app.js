@@ -8,7 +8,7 @@
   var S = {
     tab: VUE_REGLER ? 'regler' : 'suivi', names: [], cols: {}, denied: {}, loaded: false, busy: false, err: '',
     cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], achats: [], ach: { date: '', lib: '', four: '', amt: '', obs: '', err: '', ok: '', del: null }, meta: null,
-    bal: null, q: '', f: '', detail: null, add: null, rg: null, draft: null, schema: []
+    bal: null, q: '', f: '', detail: null, add: null, rg: null, edit: null, draft: null, schema: []
   };
   var qrLib = null;
 
@@ -61,7 +61,7 @@
       await load(); S.err = ''; if (okMsg) toast('ok', okMsg);
       return r && r.retValues ? r.retValues : [];
     } catch (e) { toast('error', 'Enregistrement impossible : ' + errText(e)); try { await load(); } catch (e2) {} return null; }
-    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); else if (S.rg && $('modal').open) renderRg(); }
+    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); else if (S.rg && $('modal').open) renderRg(); else if (S.edit && $('modal').open) renderEdit(); }
   }
 
   /* ---------- QR codes ---------- */
@@ -94,7 +94,7 @@
       (c.numero ? '<dt>Numéro Wero</dt><dd>' + esc(c.numero) + '</dd>' : '') + '</dl></section>';
   }
   function showPay(title, opt) {
-    S.detail = null; S.add = null; S.rg = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; S.edit = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', C.weroPayload(S.cfg, opt || {}));
   }
   function formBlock() {
@@ -104,7 +104,7 @@
     return '<p><a class="btn" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Déclarer une consommation</a> <button type="button" class="btn sec" data-act="form-qr">QR code du formulaire</button></p>';
   }
   function showFormQr() {
-    S.detail = null; S.add = null; S.rg = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; S.edit = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', S.cfg.lien);
   }
 
@@ -162,14 +162,14 @@
 
   /* ---------- Fiche d'un consommateur ---------- */
   function openModal(title, html) { $('modal-title').textContent = title; $('modal-body').innerHTML = html; if (!$('modal').open) $('modal').showModal(); }
-  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; S.rg = null; }
-  function openDetail(id) { S.add = null; S.rg = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
+  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; S.rg = null; S.edit = null; }
+  function openDetail(id) { S.add = null; S.rg = null; S.edit = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
   function renderDetail() {
     var d = S.detail, o = d && bal(d.id); if (!o) return closeModal();
     var T2 = S.types, act = T2.filter(function (t) { return t.actif; }), today = localIso();
     var ent = S.consommations.filter(function (r) { return Number(r.Consommateur) === o.id; }).sort(function (a, b) { return (Number(b.Date) || 0) - (Number(a.Date) || 0) || b.id - a.id; });
     var pays = S.reglements.filter(function (r) { return Number(r.Consommateur) === o.id; }).sort(function (a, b) { return (Number(b.Date) || 0) - (Number(a.Date) || 0) || b.id - a.id; });
-    function delBtn(kind, id) { var k = kind + id; return '<button type="button" class="btn ' + (d.del === k ? 'danger' : 'sec') + ' sm" data-act="del-' + kind + '" data-id="' + id + '">' + (d.del === k ? 'Confirmer' : 'Supprimer') + '</button>'; }
+    function delBtn(kind, id) { var k = kind + id; return '<button type="button" class="btn sec sm" data-act="ed-' + kind + '" data-id="' + id + '">Modifier</button> <button type="button" class="btn ' + (d.del === k ? 'danger' : 'sec') + ' sm" data-act="del-' + kind + '" data-id="' + id + '">' + (d.del === k ? 'Confirmer' : 'Supprimer') + '</button>'; }
     function date(r) { var v = Number(r.Date); return v ? C.dmy(v) : '—'; }
     var html = (d.err ? '<div class="alert err" role="alert">' + esc(d.err) + '</div>' : '') +
       '<div class="kpis">' + [[C.eur(o.duCents), 'consommé'], [C.eur(o.paidCents), 'réglé'], [o.soldeCents < 0 ? 'Avoir ' + C.eur(-o.soldeCents) : C.eur(o.soldeCents), o.soldeCents > 0 ? 'reste dû' : 'solde']].map(function (k, i) { return '<div class="kpi' + (i === 2 && o.soldeCents > 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
@@ -218,7 +218,7 @@
       (list.map(function (r) {
         var d = Number(r.Date), conf = a.del === r.id;
         return '<tr><td>' + (d ? C.dmy(d) : '—') + '</td><td>' + esc(r.Libelle || '') + '</td><td>' + esc(r.Fournisseur || '') + '</td><td class="n">' + C.eur(C.cents(r.Montant)) + '</td><td>' + esc(r.Observations || '') + '</td>' +
-          '<td class="n"><button type="button" class="btn ' + (conf ? 'danger' : 'sec') + ' sm" data-act="ac-del" data-id="' + r.id + '">' + (conf ? 'Confirmer' : 'Supprimer') + '</button></td></tr>';
+          '<td class="n"><button type="button" class="btn sec sm" data-act="ed-a" data-id="' + r.id + '">Modifier</button> <button type="button" class="btn ' + (conf ? 'danger' : 'sec') + ' sm" data-act="ac-del" data-id="' + r.id + '">' + (conf ? 'Confirmer' : 'Supprimer') + '</button></td></tr>';
       }).join('') || '<tr><td colspan="6" class="hint" style="text-align:center">Aucun achat enregistré.</td></tr>') +
       '</tbody><tfoot><tr><th scope="row" colspan="3">Total</th><td class="n">' + C.eur(t.totalCents) + '</td><td colspan="2"></td></tr></tfoot></table></div>';
   }
@@ -248,9 +248,59 @@
     a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
   }
 
+  /* ---------- Modifier un achat, une consommation ou un règlement ---------- */
+  function amtStr(v) { return v === null || v === undefined || v === '' ? '' : String(Number(v) || 0).replace('.', ','); }
+  function typeCols() { return S.types.filter(function (t) { return (S.cols[T.CONSOMMATIONS] || []).indexOf(t.colonne) !== -1; }); }
+  function openEdit(kind, id) {
+    var rows = kind === 'a' ? S.achats : kind === 'c' ? S.consommations : S.reglements, r = rows.filter(function (x) { return x.id === id; })[0]; if (!r) return;
+    S.detail = null; S.add = null; S.rg = null;
+    var d = Number(r.Date), e = S.edit = { kind: kind, id: id, who: Number(r.Consommateur) || 0, date: d ? C.isoDay(d) : '', lib: r.Libelle || '', four: r.Fournisseur || '', amt: amtStr(r.Montant), obs: r.Observations || '', com: r.Commentaire || '', q: {}, err: '' };
+    e.back = e.who;
+    if (kind === 'c') typeCols().forEach(function (t) { e.q[t.colonne] = amtStr(r[t.colonne]); });
+    renderEdit();
+  }
+  function readEdit() {
+    var e = S.edit; if (!e || !$('ed-date')) return;
+    e.date = $('ed-date').value;
+    if (e.kind === 'a') { e.lib = $('ed-lib').value.trim(); e.four = $('ed-four').value.trim(); e.amt = $('ed-amt').value; e.obs = $('ed-obs').value.trim(); }
+    else { e.who = Number($('ed-who').value) || 0; if (e.kind === 'p') { e.amt = $('ed-amt').value; e.obs = $('ed-obs').value.trim(); } else { e.com = $('ed-com').value.trim(); typeCols().forEach(function (t, i) { e.q[t.colonne] = $('ed-q' + i).value; }); } }
+  }
+  function renderEdit() {
+    var e = S.edit; if (!e) return;
+    function f(id, label, val, extra) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" value="' + esc(val) + '" ' + (extra || '') + '></div>'; }
+    var who = e.kind === 'a' ? '' : '<div class="field"><label for="ed-who">Consommateur</label><select id="ed-who"><option value="0">— choisir —</option>' + S.bal.rows.map(function (o) { return '<option value="' + o.id + '"' + (o.id === e.who ? ' selected' : '') + '>' + esc(o.nom || '(sans nom)') + (o.actif ? '' : ' (inactif)') + '</option>'; }).join('') + '</select></div>';
+    var body = e.kind === 'a' ? f('ed-lib', 'Achat', e.lib, 'autocomplete="off"') + f('ed-four', 'Fournisseur (facultatif)', e.four, 'autocomplete="off"') + f('ed-amt', 'Montant (€)', e.amt, 'inputmode="decimal"') + f('ed-obs', 'Observations', e.obs, 'autocomplete="off"')
+      : e.kind === 'p' ? f('ed-amt', 'Montant (€)', e.amt, 'inputmode="decimal"') + f('ed-obs', 'Observations', e.obs, 'autocomplete="off"')
+      : typeCols().map(function (t, i) { return '<div class="field"><label for="ed-q' + i + '">' + esc(t.libelle) + (t.actif ? '' : ' (archivé)') + ' (' + esc(C.eur(C.cents(t.prix))) + ')</label><input type="number" min="0" step="any" id="ed-q' + i + '" value="' + esc(e.q[t.colonne] || '') + '"></div>'; }).join('') + f('ed-com', 'Commentaire', e.com, 'autocomplete="off"');
+    openModal(e.kind === 'a' ? 'Modifier l’achat' : e.kind === 'p' ? 'Modifier le règlement' : 'Modifier la consommation',
+      (e.err ? '<div class="alert err" role="alert">' + esc(e.err) + '</div>' : '') +
+      '<div class="grid">' + who + '<div class="field"><label for="ed-date">Date</label><input type="date" id="ed-date" value="' + esc(e.date) + '"></div>' + body + '</div>' +
+      '<p><button type="button" class="btn" data-act="ed-save">Enregistrer les modifications</button> <button type="button" class="btn sec" data-act="ed-cancel">Annuler</button></p>');
+  }
+  async function saveEdit() {
+    var e = S.edit; if (!e) return;
+    readEdit(); var day = C.utcDay(e.date), amt = C.parseAmount(e.amt), table, f;
+    if (e.kind === 'a') {
+      e.err = !day ? 'Indiquez la date.' : !e.lib ? 'Indiquez ce qui a été acheté.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+      table = T.ACHATS; f = { Date: day, Libelle: e.lib, Fournisseur: e.four, Montant: amt, Observations: e.obs };
+    } else if (e.kind === 'p') {
+      e.err = !e.who ? 'Choisissez le consommateur.' : !day ? 'Indiquez la date.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+      table = T.REGLEMENTS; f = { Date: day, Consommateur: e.who, Montant: amt, Observations: e.obs };
+    } else {
+      var any = false, neg = false; f = { Date: day, Consommateur: e.who, Commentaire: e.com };
+      typeCols().forEach(function (t) { var n = Number(String(e.q[t.colonne] || '').replace(',', '.')) || 0; if (n < 0) neg = true; if (n > 0) any = true; f[t.colonne] = n; });
+      e.err = !e.who ? 'Choisissez le consommateur.' : !day ? 'Indiquez la date.' : neg ? 'Les quantités ne peuvent pas être négatives.' : !any ? 'Indiquez au moins une quantité (ou supprimez la ligne).' : '';
+      table = T.CONSOMMATIONS;
+    }
+    if (e.err) return renderEdit();
+    var r = await write([['UpdateRecord', table, e.id, f]], 'Modification enregistrée.');
+    if (r && S.edit) { var back = e.kind === 'a' ? 0 : e.who; S.edit = null; if (back) openDetail(back); else closeModal(); }
+  }
+  function cancelEdit() { var back = S.edit && S.edit.kind !== 'a' ? S.edit.back : 0; S.edit = null; if (back && bal(back)) openDetail(back); else closeModal(); }
+
   /* Saisie manuelle rapide, pour une personne ou en lot (une ligne par personne cochée). Le formulaire reste ouvert pour enchaîner. */
   function activeIds() { return S.bal.rows.filter(function (o) { return o.actif; }).map(function (o) { return o.id; }); }
-  function openAdd(id) { S.detail = null; S.rg = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '', mode: 'one', sel: null }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  function openAdd(id) { S.detail = null; S.rg = null; S.edit = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '', mode: 'one', sel: null }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
   function readAdd() { // recopie la saisie en cours avant tout réaffichage
     var a = S.add; if (!a || !$('am-date')) return;
     a.date = $('am-date').value;
@@ -299,7 +349,7 @@
   function dueRows() { return S.bal.rows.filter(function (o) { return o.soldeCents > 0; }); }
   function rgInitBatch(a) { a.sel = {}; a.amts = {}; dueRows().forEach(function (o) { a.sel[o.id] = true; a.amts[o.id] = (o.soldeCents / 100).toFixed(2); }); }
   function openRg(id) {
-    S.detail = null; S.add = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '', mode: 'one', sel: null, amts: null };
+    S.detail = null; S.add = null; S.edit = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '', mode: 'one', sel: null, amts: null };
     var o = bal(S.rg.id); if (o && o.soldeCents > 0) S.rg.amt = (o.soldeCents / 100).toFixed(2);
     renderRg(); var f = $(S.rg.id ? 'rg-amt' : 'rg-who'); if (f) f.focus();
   }
@@ -511,6 +561,9 @@
     if (a === 'detail') return openDetail(id);
     if (a === 'pay') { var o = bal(id); return showPay(o ? 'Régler : ' + o.nom : 'Régler', { amountCents: o && o.soldeCents > 0 ? o.soldeCents : 0, label: o ? 'Consommations ' + o.nom : 'Consommations' }); }
     if (a === 'form-qr') return showFormQr();
+    if (a === 'ed-a' || a === 'ed-c' || a === 'ed-p') return openEdit(a.slice(3), id);
+    if (a === 'ed-save') return saveEdit();
+    if (a === 'ed-cancel') return cancelEdit();
     if (a === 'ac-save') return saveAchat();
     if (a === 'ac-del') return delAchat(id);
     if (a === 'ac-export') return exportAchats();
@@ -551,7 +604,7 @@
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);
     if (t.getAttribute && t.getAttribute('data-ty')) return editType(t);
   });
-  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; S.rg = null; });
+  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; S.rg = null; S.edit = null; });
   $('refresh').addEventListener('click', function () { refresh(); });
 
   /* ---------- Démarrage ---------- */
