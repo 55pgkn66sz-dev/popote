@@ -8,7 +8,7 @@
   var S = {
     tab: VUE_REGLER ? 'regler' : 'suivi', names: [], cols: {}, denied: {}, loaded: false, busy: false, err: '',
     cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], meta: null,
-    bal: null, q: '', f: '', detail: null, draft: null, schema: []
+    bal: null, q: '', f: '', detail: null, add: null, draft: null, schema: []
   };
   var qrLib = null;
 
@@ -60,7 +60,7 @@
       await load(); S.err = ''; if (okMsg) toast('ok', okMsg);
       return r && r.retValues ? r.retValues : [];
     } catch (e) { toast('error', 'Enregistrement impossible : ' + errText(e)); try { await load(); } catch (e2) {} return null; }
-    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); }
+    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); }
   }
 
   /* ---------- QR codes ---------- */
@@ -93,7 +93,7 @@
       (c.numero ? '<dt>Numéro Wero</dt><dd>' + esc(c.numero) + '</dd>' : '') + '</dl></section>';
   }
   function showPay(title, opt) {
-    S.detail = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', C.weroPayload(S.cfg, opt || {}));
   }
   function formBlock() {
@@ -103,7 +103,7 @@
     return '<p><a class="btn" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Déclarer une consommation</a> <button type="button" class="btn sec" data-act="form-qr">QR code du formulaire</button></p>';
   }
   function showFormQr() {
-    S.detail = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', S.cfg.lien);
   }
 
@@ -136,7 +136,7 @@
       '<div class="kpis">' + [[C.eur(t.duCents), 'dû'], [C.eur(t.paidCents), 'réglé'], [C.eur(t.resteCents), 'reste dû']].map(function (k, i) { return '<div class="kpi' + (i === 2 && t.resteCents > 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
       '<div class="toolbar"><label class="sr" for="q">Rechercher</label><input id="q" type="search" placeholder="Rechercher un consommateur" value="' + esc(S.q) + '">' +
       '<label class="sr" for="f">Filtre</label><select id="f">' + [['', 'Tous'], ['due', 'Reste à régler'], ['ok', 'À jour'], ['over', 'Avoir'], ['none', 'Sans activité']].map(function (o) { return '<option value="' + o[0] + '"' + (S.f === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
-      '<button type="button" class="btn sec" data-act="export">Exporter en CSV</button>' + '</div>' + formBlock() + '<div id="suivi-table">' + tableSuivi() + '</div>';
+      '<button type="button" class="btn" data-act="add-open"' + (hasTables() && S.types.some(function (t) { return t.actif; }) ? '' : ' disabled') + '>Ajouter une consommation</button><button type="button" class="btn sec" data-act="export">Exporter en CSV</button>' + '</div>' + formBlock() + '<div id="suivi-table">' + tableSuivi() + '</div>';
   }
   function visibleRows() {
     var q = C.norm(S.q);
@@ -160,8 +160,8 @@
 
   /* ---------- Fiche d'un consommateur ---------- */
   function openModal(title, html) { $('modal-title').textContent = title; $('modal-body').innerHTML = html; if (!$('modal').open) $('modal').showModal(); }
-  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; }
-  function openDetail(id) { S.detail = { id: id, err: '', del: null, add: false }; renderDetail(); }
+  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; }
+  function openDetail(id) { S.add = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
   function renderDetail() {
     var d = S.detail, o = d && bal(d.id); if (!o) return closeModal();
     var T2 = S.types, act = T2.filter(function (t) { return t.actif; }), today = localIso();
@@ -179,10 +179,7 @@
       '<h3>Consommations déclarées (' + ent.length + ')</h3>' + (ent.length ? '<div class="scroll"><table><thead><tr><th>Date</th>' + T2.map(function (t) { return '<th class="n">' + esc(t.libelle) + '</th>'; }).join('') + '<th class="n">Montant</th><th></th></tr></thead><tbody>' +
         ent.map(function (r) { var m = T2.reduce(function (s, t) { return s + Math.round((Number(r[t.colonne]) || 0) * C.cents(t.prix)); }, 0);
           return '<tr><td>' + date(r) + '</td>' + T2.map(function (t) { var n = Number(r[t.colonne]) || 0; return '<td class="n">' + (n ? String(n).replace('.', ',') : '') + '</td>'; }).join('') + '<td class="n">' + C.eur(m) + '</td><td class="n">' + delBtn('c', r.id) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="hint">Aucune consommation déclarée.</p>') +
-      (d.add ? '<h3>Ajouter une consommation (saisie manuelle)</h3><div class="grid"><div class="field"><label for="ca-date">Date</label><input type="date" id="ca-date" value="' + today + '"></div>' +
-        act.map(function (t, i) { return '<div class="field"><label for="ca-q' + i + '">' + esc(t.libelle) + ' (' + esc(C.eur(C.cents(t.prix))) + ')</label><input type="number" min="0" step="1" id="ca-q' + i + '"></div>'; }).join('') + '</div>' +
-        '<p><button type="button" class="btn" data-act="add-conso">Ajouter</button> <button type="button" class="btn sec" data-act="conso-no">Annuler</button></p>'
-        : '<p><button type="button" class="btn sec" data-act="conso-new"' + (act.length ? '' : ' disabled') + '>Ajouter une consommation (saisie manuelle)</button></p>');
+      ('<p><button type="button" class="btn sec" data-act="add-open" data-id="' + o.id + '"' + (act.length ? '' : ' disabled') + '>Ajouter une consommation (saisie manuelle)</button></p>');
     openModal(o.nom, html);
   }
   async function detailAction(a, btn) {
@@ -198,14 +195,31 @@
       if (d.del !== key) { d.del = key; return renderDetail(); }
       d.del = null; return write([['RemoveRecord', a === 'del-p' ? T.REGLEMENTS : T.CONSOMMATIONS, id]], 'Supprimé.');
     }
-    if (a === 'conso-new') { d.add = true; return renderDetail(); }
-    if (a === 'conso-no') { d.add = false; return renderDetail(); }
-    if (a === 'add-conso') {
-      var day2 = C.utcDay($('ca-date').value), f = { Date: day2, Consommateur: d.id, Commentaire: 'Saisie manuelle' }, any = false;
-      S.types.filter(function (t) { return t.actif; }).forEach(function (t, i) { var n = Number($('ca-q' + i).value) || 0; if (n < 0) n = 0; if (n) any = true; f[t.colonne] = n; });
-      d.err = !day2 ? 'Indiquez la date.' : !any ? 'Indiquez au moins une quantité.' : ''; if (d.err) return renderDetail();
-      d.add = false; return write([['AddRecord', T.CONSOMMATIONS, null, f]], 'Consommation ajoutée.');
-    }
+  }
+
+  /* Saisie manuelle rapide : choisir la personne, la date et les quantités ; le formulaire reste ouvert pour enchaîner. */
+  function openAdd(id) { S.detail = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '' }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  function renderAdd() {
+    var a = S.add; if (!a) return;
+    var act = S.types.filter(function (t) { return t.actif; }), who = S.bal.rows.filter(function (o) { return o.actif || o.id === a.id; });
+    openModal('Ajouter une consommation',
+      (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
+      '<div class="grid"><div class="field"><label for="am-who">Consommateur</label><select id="am-who"><option value="0">— choisir —</option>' + who.map(function (o) { return '<option value="' + o.id + '"' + (o.id === a.id ? ' selected' : '') + '>' + esc(o.nom || '(sans nom)') + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label for="am-date">Date</label><input type="date" id="am-date" value="' + esc(a.date) + '"></div></div>' +
+      '<h3>Quantités</h3><div class="grid">' + act.map(function (t, i) { return '<div class="field"><label for="am-q' + i + '">' + esc(t.libelle) + ' (' + esc(C.eur(C.cents(t.prix))) + ')</label><input type="number" min="0" step="1" id="am-q' + i + '" value="' + esc(a.q[t.colonne] || '') + '"></div>'; }).join('') + '</div>' +
+      '<p><button type="button" class="btn" data-act="add-save">Enregistrer</button> <button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+  }
+  async function addSave() {
+    var a = S.add; if (!a) return;
+    var act = S.types.filter(function (t) { return t.actif; }), f = { Commentaire: 'Saisie manuelle' }, any = false, neg = false;
+    a.id = Number($('am-who').value) || 0; a.date = $('am-date').value; a.ok = '';
+    act.forEach(function (t, i) { var raw = $('am-q' + i).value; a.q[t.colonne] = raw; var n = Number(raw) || 0; if (n < 0) neg = true; if (n > 0) { any = true; f[t.colonne] = n; } });
+    f.Date = C.utcDay(a.date); f.Consommateur = a.id;
+    a.err = !a.id ? 'Choisissez le consommateur.' : !f.Date ? 'Indiquez la date.' : neg ? 'Les quantités ne peuvent pas être négatives.' : !any ? 'Indiquez au moins une quantité.' : '';
+    if (a.err) return renderAdd();
+    var o = bal(a.id), r = await write([['AddRecord', T.CONSOMMATIONS, null, f]]);
+    if (r && S.add) { a.q = {}; a.ok = 'Consommation ajoutée pour ' + (o ? o.nom : '') + '. Vous pouvez en saisir une autre.'; }
+    renderAdd(); var q0 = $('am-q0'); if (q0) q0.focus();
   }
 
   function exportCsv() {
@@ -362,6 +376,8 @@
     if (a === 'detail') return openDetail(id);
     if (a === 'pay') { var o = bal(id); return showPay(o ? 'Régler : ' + o.nom : 'Régler', { amountCents: o && o.soldeCents > 0 ? o.soldeCents : 0, label: o ? 'Consommations ' + o.nom : 'Consommations' }); }
     if (a === 'form-qr') return showFormQr();
+    if (a === 'add-open') return openAdd(id || 0);
+    if (a === 'add-save') return addSave();
     if (a === 'export') return exportCsv();
     if (a === 'create') return createTables();
     if (a === 'save-cfg') return saveCfg();
@@ -386,7 +402,7 @@
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);
     if (t.getAttribute && t.getAttribute('data-ty')) return editType(t);
   });
-  $('modal').addEventListener('close', function () { S.detail = null; });
+  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; });
   $('refresh').addEventListener('click', function () { refresh(); });
 
   /* ---------- Démarrage ---------- */

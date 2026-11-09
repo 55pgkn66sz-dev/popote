@@ -42,6 +42,10 @@ Deux pages Grist, un même widget :
 5. **Types et tarifs** : chaque type correspond à une colonne de `Conso_Consommations`. L'ajout d'un type crée la colonne. Un type ne se supprime pas, il s'**archive**.
    **Le tarif s'applique à tout l'historique.** Pour un changement de prix à une date donnée, archivez l'ancien type et créez-en un nouveau.
 
+### Ajouter une consommation à la main
+
+Onglet **Suivi → Ajouter une consommation** (ou le même bouton dans la fiche d'une personne, qui présélectionne celle-ci) : choisissez le consommateur, la date et les quantités. Le formulaire reste ouvert pour enchaîner plusieurs saisies. La ligne est créée dans `Conso_Consommations` avec le commentaire « Saisie manuelle ». Réservé au gestionnaire par les permissions du § 4 (création ouverte à tous sur cette table : voir § 4.5).
+
 ## 3. Schéma des tables
 
 Toutes les colonnes sont créées par le bouton. Les identifiants sont fixes (le widget les lit par leur nom).
