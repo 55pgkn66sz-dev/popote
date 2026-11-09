@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consommations</title>
+<link rel="stylesheet" href="style.css">
+<script>
+  // ?demo=1 : faux Grist en mémoire (développement). Sinon : API du widget (instance gouvernementale, puis docs.getgrist.com).
+  var DEMO = /[?&]demo=1\b/.test(location.search);
+  if (DEMO) document.write('<script src="dev/mock-grist.js"><\/script>');
+  else document.write('<script src="https://grist.numerique.gouv.fr/grist-plugin-api.js"><\/script>');
+</script>
+<script>if (!DEMO && !window.grist) document.write('<script src="https://docs.getgrist.com/grist-plugin-api.js"><\/script>');</script>
+</head>
+<body>
+<header class="top">
+  <h1>Consommations</h1>
+  <nav id="tabs" role="tablist" aria-label="Sections"></nav>
+  <button type="button" class="btn sec" id="refresh" title="Recharger les données">Actualiser</button>
+</header>
+<div id="toast" role="status" aria-live="polite"></div>
+<main id="app" tabindex="-1"><p class="hint">Chargement…</p></main>
+<dialog id="modal" aria-labelledby="modal-title">
+  <div class="modal-head"><h2 id="modal-title"></h2><button type="button" class="btn sec sm" data-act="close" aria-label="Fermer">✕</button></div>
+  <div id="modal-body"></div>
+</dialog>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
