@@ -205,7 +205,7 @@
     if (!ok) return missingBanner() + deniedBanner();
     var list = S.achats.slice().sort(function (x, y) { return (Number(y.Date) || 0) - (Number(x.Date) || 0) || y.id - x.id; });
     return missingBanner() + deniedBanner() +
-      '<div class="kpis">' + [[C.eur(t.totalCents), 'achats (' + t.n + ')'], [C.eur(S.bal.totals.paidCents), 'encaissé (règlements)'], [(t.caisseCents < 0 ? '−' : '') + C.eur(Math.abs(t.caisseCents)), 'encaissé − achats']].map(function (k, i) { return '<div class="kpi' + (i === 2 && t.caisseCents < 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
+      '<div class="kpis">' + [[C.eur(t.totalCents), 'achats (' + t.n + ')'], [C.eur(S.bal.totals.paidCents), 'encaissé (règlements)'], [(t.caisseCents < 0 ? '−' : '') + C.eur(Math.abs(t.caisseCents)), 'solde popote']].map(function (k, i) { return '<div class="kpi' + (i === 2 && t.caisseCents < 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
       '<section class="card"><h2>Enregistrer un achat</h2>' + (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
       '<div class="grid"><div class="field"><label for="ac-date">Date</label><input type="date" id="ac-date" value="' + esc(a.date) + '"></div>' +
       '<div class="field"><label for="ac-lib">Achat</label><input id="ac-lib" value="' + esc(a.lib) + '" placeholder="Café en grains, lait…" autocomplete="off"></div>' +

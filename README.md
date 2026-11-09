@@ -57,7 +57,7 @@ Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le 
 ### Enregistrer les achats
 
 Onglet **Achats** : enregistrez ce que le gestionnaire achète pour la popote (café, lait, denrées…) : date, achat, fournisseur (facultatif), montant, observations. La date et le fournisseur restent préremplis pour enchaîner plusieurs achats. La liste peut être exportée en CSV, et un achat saisi par erreur se supprime en deux clics.
-Les indicateurs affichent le total des achats, le total encaissé (règlements) et la différence **encaissé − achats** (en rouge si elle est négative). Les achats n'entrent **pas** dans le solde des consommateurs.
+Les indicateurs affichent le total des achats, le total encaissé (règlements) et le **solde popote** (encaissé − achats ; en rouge s'il est négatif). Les achats n'entrent **pas** dans le solde des consommateurs.
 
 ## 3. Schéma des tables
 
