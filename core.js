@@ -13,7 +13,8 @@
     CONSOMMATEURS: 'Conso_Consommateurs',
     TYPES: 'Conso_Types',
     CONSOMMATIONS: 'Conso_Consommations',
-    REGLEMENTS: 'Conso_Reglements'
+    REGLEMENTS: 'Conso_Reglements',
+    ACHATS: 'Conso_Achats'
   };
 
   /* Colonnes de Conso_Consommations qui ne sont pas des types de consommation. */
@@ -56,6 +57,13 @@
     { id: T.REGLEMENTS, kind: 'saisie', ref: true, usage: 'Règlements enregistrés par le gestionnaire', cols: [
       { id: 'Date', type: 'Date', label: 'Date' },
       { id: 'Consommateur', type: 'Ref:' + T.CONSOMMATEURS, label: 'Consommateur' },
+      { id: 'Montant', type: 'Numeric', label: 'Montant (€)' },
+      { id: 'Observations', type: 'Text', label: 'Observations' }
+    ] },
+    { id: T.ACHATS, kind: 'saisie', usage: 'Achats de fournitures faits par le gestionnaire (café, denrées…)', cols: [
+      { id: 'Date', type: 'Date', label: 'Date' },
+      { id: 'Libelle', type: 'Text', label: 'Libellé' },
+      { id: 'Fournisseur', type: 'Text', label: 'Fournisseur' },
       { id: 'Montant', type: 'Numeric', label: 'Montant (€)' },
       { id: 'Observations', type: 'Text', label: 'Observations' }
     ] }
@@ -147,6 +155,12 @@
     return { rows: list, totals: { duCents: tot.du, paidCents: tot.paid, resteCents: tot.du - tot.paid }, orphans: orphans };
   }
 
+  /* Total des achats (centimes) et nombre de lignes ; trésorerie = encaissé (règlements) − achats. */
+  function achatsTotals(rows, paidCents) {
+    var tot = 0; (rows || []).forEach(function (r) { tot += cents(r.Montant); });
+    return { totalCents: tot, n: (rows || []).length, caisseCents: (paidCents || 0) - tot };
+  }
+
   function status(o) { return o.soldeCents > 0 ? 'due' : o.soldeCents < 0 ? 'over' : (o.nConso || o.nPay ? 'ok' : 'none'); }
 
   /* ---------- Création / complétion du schéma ---------- */
@@ -225,7 +239,7 @@
     T: T, SCHEMA: SCHEMA, RESERVED: RESERVED, DEFAULT_TYPES: DEFAULT_TYPES,
     norm: norm, csoId: csoId, uniqueColId: uniqueColId, cents: cents, eur: eur, parseAmount: parseAmount,
     ibanClean: ibanClean, ibanFmt: ibanFmt, ibanOk: ibanOk, weroPayload: weroPayload, isHttpUrl: isHttpUrl,
-    readConfig: readConfig, readTypes: readTypes, computeBalances: computeBalances, status: status,
+    readConfig: readConfig, achatsTotals: achatsTotals, readTypes: readTypes, computeBalances: computeBalances, status: status,
     schemaStatus: schemaStatus, addTableAction: addTableAction, addColumnActions: addColumnActions, typeColSpec: typeColSpec, defOf: defOf,
     refDisplayActions: refDisplayActions, csv: csv, csvCell: csvCell, utcDay: utcDay, dmy: dmy, isoDay: isoDay
   };

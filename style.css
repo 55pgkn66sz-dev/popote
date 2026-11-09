@@ -46,3 +46,6 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .scroll { overflow: auto; max-height: 40vh; }
 .hidden { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mode { border: 0; padding: 0; margin: 0 0 .6rem; } .mode label { display: inline-block; font-weight: 400; margin-right: 1rem; font-size: .95rem; }
+.checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .15rem .75rem; max-height: 30vh; border: 1px solid var(--line); border-radius: .4rem; padding: .4rem .6rem; }
+.chk { font-weight: 400; margin: 0; font-size: .92rem; }

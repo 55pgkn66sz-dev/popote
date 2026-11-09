@@ -7,7 +7,7 @@
   var VUE_REGLER = /[?&]vue=regler\b/.test(location.search);   // ?vue=regler : vue « Régler » seule, pour les consommateurs
   var S = {
     tab: VUE_REGLER ? 'regler' : 'suivi', names: [], cols: {}, denied: {}, loaded: false, busy: false, err: '',
-    cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], meta: null,
+    cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], achats: [], ach: { date: '', lib: '', four: '', amt: '', obs: '', err: '', ok: '', del: null }, meta: null,
     bal: null, q: '', f: '', detail: null, add: null, rg: null, draft: null, schema: []
   };
   var qrLib = null;
@@ -43,6 +43,7 @@
     S.typesRaw = (await tbl(T.TYPES)) || []; S.types = C.readTypes(S.typesRaw);
     S.consommations = (await tbl(T.CONSOMMATIONS)) || [];
     S.reglements = (await tbl(T.REGLEMENTS)) || [];
+    S.achats = (await tbl(T.ACHATS)) || [];
     try { var a = await G().fetchTable('_grist_Tables'), b = await G().fetchTable('_grist_Tables_column'); S.meta = { tables: a, cols: b }; } catch (e) { S.meta = null; }
     S.schema = C.schemaStatus(S.names, S.cols, S.types);
     S.bal = C.computeBalances({ types: S.types, consommateurs: S.consommateurs, consommations: S.consommations, reglements: S.reglements });
@@ -109,12 +110,13 @@
 
   /* ---------- Vues ---------- */
   function render() {
-    var nav = $('tabs'), tabs = VUE_REGLER ? [] : [['suivi', 'Suivi'], ['regler', 'Régler'], ['bo', 'Back office']];
+    var nav = $('tabs'), tabs = VUE_REGLER ? [] : [['suivi', 'Suivi'], ['achats', 'Achats'], ['regler', 'Régler'], ['bo', 'Back office']];
     nav.innerHTML = tabs.map(function (t) { return '<button type="button" role="tab" data-act="tab" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>'; }).join('');
     var app = $('app');
     if (S.err) { app.innerHTML = '<div class="alert err" role="alert">' + esc(S.err) + '</div>'; return; }
     if (!S.loaded) { app.innerHTML = '<p class="hint">Chargement…</p>'; return; }
-    app.innerHTML = S.tab === 'bo' ? viewBO() : S.tab === 'regler' ? viewRegler() : viewSuivi();
+    if (S.tab === 'achats' && !S.ach.date) S.ach.date = localIso();
+    app.innerHTML = S.tab === 'bo' ? viewBO() : S.tab === 'regler' ? viewRegler() : S.tab === 'achats' ? viewAchats() : viewSuivi();
     if (S.tab === 'regler') drawQr('qr-slot', C.weroPayload(S.cfg, {}));
   }
   function missingBanner() {
@@ -197,28 +199,99 @@
     }
   }
 
-  /* Saisie manuelle rapide : choisir la personne, la date et les quantités ; le formulaire reste ouvert pour enchaîner. */
-  function openAdd(id) { S.detail = null; S.rg = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '' }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  /* ---------- Achats (fournitures achetées par le gestionnaire) ---------- */
+  function viewAchats() {
+    var a = S.ach, t = C.achatsTotals(S.achats, S.bal.totals.paidCents), ok = !!realName(T.ACHATS);
+    if (!ok) return missingBanner() + deniedBanner();
+    var list = S.achats.slice().sort(function (x, y) { return (Number(y.Date) || 0) - (Number(x.Date) || 0) || y.id - x.id; });
+    return missingBanner() + deniedBanner() +
+      '<div class="kpis">' + [[C.eur(t.totalCents), 'achats (' + t.n + ')'], [C.eur(S.bal.totals.paidCents), 'encaissé (règlements)'], [(t.caisseCents < 0 ? '−' : '') + C.eur(Math.abs(t.caisseCents)), 'encaissé − achats']].map(function (k, i) { return '<div class="kpi' + (i === 2 && t.caisseCents < 0 ? ' warn' : '') + '"><strong>' + k[0] + '</strong><span>' + k[1] + '</span></div>'; }).join('') + '</div>' +
+      '<section class="card"><h2>Enregistrer un achat</h2>' + (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
+      '<div class="grid"><div class="field"><label for="ac-date">Date</label><input type="date" id="ac-date" value="' + esc(a.date) + '"></div>' +
+      '<div class="field"><label for="ac-lib">Achat</label><input id="ac-lib" value="' + esc(a.lib) + '" placeholder="Café en grains, lait…" autocomplete="off"></div>' +
+      '<div class="field"><label for="ac-four">Fournisseur (facultatif)</label><input id="ac-four" value="' + esc(a.four) + '" autocomplete="off"></div>' +
+      '<div class="field"><label for="ac-amt">Montant (€)</label><input id="ac-amt" inputmode="decimal" value="' + esc(a.amt) + '"></div>' +
+      '<div class="field"><label for="ac-obs">Observations</label><input id="ac-obs" value="' + esc(a.obs) + '" placeholder="Facture n°, remboursé…" autocomplete="off"></div></div>' +
+      '<p><button type="button" class="btn" data-act="ac-save">Enregistrer l’achat</button></p></section>' +
+      '<div class="toolbar"><h2 style="margin:0;flex:1">Achats enregistrés</h2><button type="button" class="btn sec" data-act="ac-export">Exporter en CSV</button></div>' +
+      '<div class="scroll" style="max-height:55vh"><table><caption class="sr">Achats</caption><thead><tr><th scope="col">Date</th><th scope="col">Achat</th><th scope="col">Fournisseur</th><th scope="col" class="n">Montant</th><th scope="col">Observations</th><th scope="col"><span class="sr">Action</span></th></tr></thead><tbody>' +
+      (list.map(function (r) {
+        var d = Number(r.Date), conf = a.del === r.id;
+        return '<tr><td>' + (d ? C.dmy(d) : '—') + '</td><td>' + esc(r.Libelle || '') + '</td><td>' + esc(r.Fournisseur || '') + '</td><td class="n">' + C.eur(C.cents(r.Montant)) + '</td><td>' + esc(r.Observations || '') + '</td>' +
+          '<td class="n"><button type="button" class="btn ' + (conf ? 'danger' : 'sec') + ' sm" data-act="ac-del" data-id="' + r.id + '">' + (conf ? 'Confirmer' : 'Supprimer') + '</button></td></tr>';
+      }).join('') || '<tr><td colspan="6" class="hint" style="text-align:center">Aucun achat enregistré.</td></tr>') +
+      '</tbody><tfoot><tr><th scope="row" colspan="3">Total</th><td class="n">' + C.eur(t.totalCents) + '</td><td colspan="2"></td></tr></tfoot></table></div>';
+  }
+  function readAchat() {
+    var a = S.ach; if (!$('ac-date')) return;
+    a.date = $('ac-date').value; a.lib = $('ac-lib').value.trim(); a.four = $('ac-four').value.trim(); a.amt = $('ac-amt').value; a.obs = $('ac-obs').value.trim();
+  }
+  async function saveAchat() {
+    var a = S.ach; readAchat(); a.ok = ''; a.del = null;
+    var amt = C.parseAmount(a.amt), day = C.utcDay(a.date);
+    a.err = !day ? 'Indiquez la date.' : !a.lib ? 'Indiquez ce qui a été acheté.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+    if (a.err) return render();
+    var r = await write([['AddRecord', T.ACHATS, null, { Date: day, Libelle: a.lib, Fournisseur: a.four, Montant: amt, Observations: a.obs }]]);
+    if (r) { a.ok = 'Achat enregistré : ' + a.lib + ', ' + C.eur(C.cents(amt)) + '.'; a.lib = ''; a.amt = ''; a.obs = ''; }   // la date et le fournisseur restent pour enchaîner
+    render(); var f = $('ac-lib'); if (f) f.focus();
+  }
+  async function delAchat(id) {
+    var a = S.ach; readAchat(); if (a.del !== id) { a.del = id; return render(); }
+    a.del = null; await write([['RemoveRecord', T.ACHATS, id]], 'Achat supprimé.');
+  }
+  function exportAchats() {
+    var rows = S.achats.slice().sort(function (x, y) { return (Number(x.Date) || 0) - (Number(y.Date) || 0); }).map(function (r) { var d = Number(r.Date); return [d ? C.isoDay(d) : '', r.Libelle || '', r.Fournisseur || '', (C.cents(r.Montant) / 100).toFixed(2).replace('.', ','), r.Observations || '']; });
+    download('Achats_' + localIso() + '.csv', C.csv(['Date', 'Achat', 'Fournisseur', 'Montant (€)', 'Observations'], rows));
+  }
+  function download(name, text) {
+    var blob = new Blob([text], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+
+  /* Saisie manuelle rapide, pour une personne ou en lot (une ligne par personne cochée). Le formulaire reste ouvert pour enchaîner. */
+  function activeIds() { return S.bal.rows.filter(function (o) { return o.actif; }).map(function (o) { return o.id; }); }
+  function openAdd(id) { S.detail = null; S.rg = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '', mode: 'one', sel: null }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  function readAdd() { // recopie la saisie en cours avant tout réaffichage
+    var a = S.add; if (!a || !$('am-date')) return;
+    a.date = $('am-date').value;
+    S.types.filter(function (t) { return t.actif; }).forEach(function (t, i) { var e = $('am-q' + i); if (e) a.q[t.colonne] = e.value; });
+    if (a.mode === 'batch') a.sel = Array.prototype.map.call(document.querySelectorAll('#modal-body [data-am-sel]:checked'), function (e) { return Number(e.value); });
+    else if ($('am-who')) a.id = Number($('am-who').value) || 0;
+  }
+  function addQtys() { // quantités saisies (> 0) par colonne de type
+    var o = {}; S.types.filter(function (t) { return t.actif; }).forEach(function (t) { var n = Number((S.add.q || {})[t.colonne]) || 0; if (n > 0) o[t.colonne] = n; }); return o;
+  }
+  function addSummary() { // texte et libellé du bouton, mis à jour à la volée
+    var a = S.add; if (!a || a.mode !== 'batch') return;
+    var n = ((a.sel) || []).length, each = S.types.reduce(function (s, t) { return s + Math.round((addQtys()[t.colonne] || 0) * C.cents(t.prix)); }, 0);
+    if ($('am-count')) $('am-count').textContent = n + ' consommateur' + (n > 1 ? 's' : '') + ' coché' + (n > 1 ? 's' : '') + (each ? ' : ' + C.eur(each) + ' chacun, ' + C.eur(each * n) + ' au total' : '');
+    var b = document.querySelector('#modal-body [data-act=add-save]'); if (b) b.textContent = 'Ajouter pour ' + n + ' personne' + (n > 1 ? 's' : '');
+  }
   function renderAdd() {
     var a = S.add; if (!a) return;
-    var act = S.types.filter(function (t) { return t.actif; }), who = S.bal.rows.filter(function (o) { return o.actif || o.id === a.id; });
+    var act = S.types.filter(function (t) { return t.actif; }), batch = a.mode === 'batch', who = S.bal.rows.filter(function (o) { return o.actif || o.id === a.id; });
+    if (batch && !a.sel) a.sel = activeIds();
     openModal('Ajouter une consommation',
       (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
-      '<div class="grid"><div class="field"><label for="am-who">Consommateur</label><select id="am-who"><option value="0">— choisir —</option>' + who.map(function (o) { return '<option value="' + o.id + '"' + (o.id === a.id ? ' selected' : '') + '>' + esc(o.nom || '(sans nom)') + '</option>'; }).join('') + '</select></div>' +
+      '<fieldset class="mode"><legend class="sr">Mode de saisie</legend><label><input type="radio" name="am-mode" value="one"' + (batch ? '' : ' checked') + '> Un consommateur</label> <label><input type="radio" name="am-mode" value="batch"' + (batch ? ' checked' : '') + '> En lot (plusieurs consommateurs)</label></fieldset>' +
+      '<div class="grid">' + (batch ? '' : '<div class="field"><label for="am-who">Consommateur</label><select id="am-who"><option value="0">— choisir —</option>' + who.map(function (o) { return '<option value="' + o.id + '"' + (o.id === a.id ? ' selected' : '') + '>' + esc(o.nom || '(sans nom)') + '</option>'; }).join('') + '</select></div>') +
       '<div class="field"><label for="am-date">Date</label><input type="date" id="am-date" value="' + esc(a.date) + '"></div></div>' +
-      '<h3>Quantités</h3><div class="grid">' + act.map(function (t, i) { return '<div class="field"><label for="am-q' + i + '">' + esc(t.libelle) + ' (' + esc(C.eur(C.cents(t.prix))) + ')</label><input type="number" min="0" step="1" id="am-q' + i + '" value="' + esc(a.q[t.colonne] || '') + '"></div>'; }).join('') + '</div>' +
+      (batch ? '<h3>Consommateurs</h3><p class="toolbar"><button type="button" class="btn sec sm" data-act="am-all">Tout cocher</button><button type="button" class="btn sec sm" data-act="am-none">Tout décocher</button><span class="hint" id="am-count" aria-live="polite"></span></p>' +
+        '<div class="scroll checks">' + S.bal.rows.filter(function (o) { return o.actif; }).map(function (o) { return '<label class="chk"><input type="checkbox" data-am-sel value="' + o.id + '"' + (a.sel.indexOf(o.id) !== -1 ? ' checked' : '') + '> ' + esc(o.nom || '(sans nom)') + '</label>'; }).join('') + '</div>' : '') +
+      '<h3>Quantités' + (batch ? ' (pour chaque personne cochée)' : '') + '</h3><div class="grid">' + act.map(function (t, i) { return '<div class="field"><label for="am-q' + i + '">' + esc(t.libelle) + ' (' + esc(C.eur(C.cents(t.prix))) + ')</label><input type="number" min="0" step="1" id="am-q' + i + '" value="' + esc(a.q[t.colonne] || '') + '"></div>'; }).join('') + '</div>' +
       '<p><button type="button" class="btn" data-act="add-save">Enregistrer</button> <button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    addSummary();
   }
   async function addSave() {
     var a = S.add; if (!a) return;
-    var act = S.types.filter(function (t) { return t.actif; }), f = { Commentaire: 'Saisie manuelle' }, any = false, neg = false;
-    a.id = Number($('am-who').value) || 0; a.date = $('am-date').value; a.ok = '';
-    act.forEach(function (t, i) { var raw = $('am-q' + i).value; a.q[t.colonne] = raw; var n = Number(raw) || 0; if (n < 0) neg = true; if (n > 0) { any = true; f[t.colonne] = n; } });
-    f.Date = C.utcDay(a.date); f.Consommateur = a.id;
-    a.err = !a.id ? 'Choisissez le consommateur.' : !f.Date ? 'Indiquez la date.' : neg ? 'Les quantités ne peuvent pas être négatives.' : !any ? 'Indiquez au moins une quantité.' : '';
+    readAdd(); a.ok = '';
+    var act = S.types.filter(function (t) { return t.actif; }), neg = act.some(function (t) { return (Number(a.q[t.colonne]) || 0) < 0; }), qty = addQtys(), day = C.utcDay(a.date);
+    var ids = a.mode === 'batch' ? (a.sel || []).filter(function (id) { return activeIds().indexOf(id) !== -1; }) : (a.id ? [a.id] : []);
+    a.err = !ids.length ? (a.mode === 'batch' ? 'Cochez au moins un consommateur.' : 'Choisissez le consommateur.') : !day ? 'Indiquez la date.' : neg ? 'Les quantités ne peuvent pas être négatives.' : !Object.keys(qty).length ? 'Indiquez au moins une quantité.' : '';
     if (a.err) return renderAdd();
-    var o = bal(a.id), r = await write([['AddRecord', T.CONSOMMATIONS, null, f]]);
-    if (r && S.add) { a.q = {}; a.ok = 'Consommation ajoutée pour ' + (o ? o.nom : '') + '. Vous pouvez en saisir une autre.'; }
+    var acts = ids.map(function (id) { var f = { Date: day, Consommateur: id, Commentaire: a.mode === 'batch' ? 'Saisie manuelle (lot)' : 'Saisie manuelle' }; Object.keys(qty).forEach(function (k) { f[k] = qty[k]; }); return ['AddRecord', T.CONSOMMATIONS, null, f]; });
+    var o = bal(ids[0]), r = await write(acts);
+    if (r && S.add) { a.q = {}; a.ok = ids.length > 1 ? 'Consommation ajoutée pour ' + ids.length + ' personnes. Vous pouvez en saisir une autre.' : 'Consommation ajoutée pour ' + (o ? o.nom : '') + '. Vous pouvez en saisir une autre.'; }
     renderAdd(); var q0 = $('am-q0'); if (q0) q0.focus();
   }
 
@@ -255,8 +328,7 @@
     var head = ['Consommateur', 'Courriel'].concat(S.types.map(function (t) { return t.libelle + ' (qté)'; })).concat(['Dû (€)', 'Réglé (€)', 'Solde (€)']);
     function m(c) { return (c / 100).toFixed(2).replace('.', ','); }
     var body = visibleRows().map(function (o) { return [o.nom, o.email].concat(S.types.map(function (t) { return String(o.qty[t.colonne]).replace('.', ','); })).concat([m(o.duCents), m(o.paidCents), m(o.soldeCents)]); });
-    var blob = new Blob([C.csv(head, body)], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'Consommations_' + localIso() + '.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+    download('Consommations_' + localIso() + '.csv', C.csv(head, body));
   }
 
   /* ---------- Back office ---------- */
@@ -405,8 +477,12 @@
     if (a === 'detail') return openDetail(id);
     if (a === 'pay') { var o = bal(id); return showPay(o ? 'Régler : ' + o.nom : 'Régler', { amountCents: o && o.soldeCents > 0 ? o.soldeCents : 0, label: o ? 'Consommations ' + o.nom : 'Consommations' }); }
     if (a === 'form-qr') return showFormQr();
+    if (a === 'ac-save') return saveAchat();
+    if (a === 'ac-del') return delAchat(id);
+    if (a === 'ac-export') return exportAchats();
     if (a === 'add-open') return openAdd(id || 0);
     if (a === 'add-save') return addSave();
+    if (a === 'am-all' || a === 'am-none') { readAdd(); S.add.sel = a === 'am-all' ? activeIds() : []; return renderAdd(); }
     if (a === 'rg-open') return openRg(id || 0);
     if (a === 'rg-save') return rgSave();
     if (a === 'export') return exportCsv();
@@ -421,6 +497,7 @@
   document.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.row')) { e.preventDefault(); openDetail(Number(e.target.getAttribute('data-id'))); } });
   document.addEventListener('input', function (e) {
     var t = e.target;
+    if (S.add && t.id && /^am-q\d+$/.test(t.id)) { readAdd(); addSummary(); return; }
     if (t.id === 'q') { S.q = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cfg')) {
       var d = S.draft = draftCfg(); d[t.getAttribute('data-cfg')] = t.value;
@@ -429,6 +506,8 @@
   });
   document.addEventListener('change', function (e) {
     var t = e.target;
+    if (t.name === 'am-mode' && S.add) { readAdd(); S.add.mode = t.value; if (t.value === 'batch' && !S.add.sel) S.add.sel = activeIds(); return renderAdd(); }
+    if (t.getAttribute && t.hasAttribute('data-am-sel') && S.add) { readAdd(); return addSummary(); }
     if (t.id === 'rg-who' && S.rg) { var o = bal(Number(t.value)), am = $('rg-amt'); if (am && !am.value.trim() && o && o.soldeCents > 0) am.value = (o.soldeCents / 100).toFixed(2); return; }
     if (t.id === 'f') { S.f = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);

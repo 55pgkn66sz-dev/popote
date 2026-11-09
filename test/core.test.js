@@ -78,7 +78,7 @@ test('analyse de montant et affichage €', () => {
 test('état du schéma et actions', () => {
   const types = [{ colonne: 'Cafe', libelle: 'Café' }];
   let st = C.schemaStatus([], {}, types);
-  assert.equal(st.length, 5); assert.ok(st.every(s => !s.exists));
+  assert.equal(st.length, 6); assert.ok(st.every(s => !s.exists));
   st = C.schemaStatus(['conso_config', 'Conso_Consommations'], { Conso_Consommations: ['Date', 'Consommateur', 'Commentaire'] }, types);
   assert.ok(st.find(s => s.id === 'Conso_Consommations').missing.map(c => c.id).join() === 'Cafe');
   const add = C.addTableAction(C.defOf('Conso_Consommations'), types);
@@ -107,6 +107,13 @@ test('CSV : injection de formule neutralisée, guillemets échappés', () => {
   assert.equal(C.csvCell('a;b'), '"a;b"');
   assert.equal(C.csvCell('dit "oui"'), '"dit ""oui"""');
   assert.ok(C.csv(['A'], [['x']]).startsWith('﻿'));
+});
+
+test('achats : total et trésorerie en centimes', () => {
+  const r = C.achatsTotals([{ Montant: 12.1 }, { Montant: 0.2 }, { Montant: 'x' }], 5000);
+  assert.deepEqual(r, { totalCents: 1230, n: 3, caisseCents: 3770 });
+  assert.deepEqual(C.achatsTotals([], 0), { totalCents: 0, n: 0, caisseCents: 0 });
+  assert.ok(C.SCHEMA.find(t => t.id === 'Conso_Achats' && !t.ref));   // créée avant les tables à références
 });
 
 test('dates UTC', () => {

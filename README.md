@@ -24,7 +24,7 @@ Deux pages Grist, un même widget :
 
 | Page | URL du widget | Public | Onglets |
 |---|---|---|---|
-| Gestion | `…/index.html` | le gestionnaire | Suivi, Régler, Back office |
+| Gestion | `…/index.html` | le gestionnaire | Suivi, Achats, Régler, Back office |
 | Consommateurs | `…/index.html?vue=regler` | tout le monde | Régler uniquement (QR, IBAN, Wero, lien du formulaire) |
 
 > **Le widget n'est pas un garde-fou.** Cacher un onglet n'empêche rien : seules les permissions avancées du § 4 protègent les données.
@@ -33,7 +33,7 @@ Deux pages Grist, un même widget :
 
 ## 2. Back office, pas à pas
 
-1. **Installation** : cliquez sur **Créer / compléter les tables**. L'opération est répétable sans danger : elle ne supprime et n'écrase rien. Elle crée les 5 tables du § 3, amorce 5 types (café, boisson, petit-déjeuner, repas midi, repas soir) et une ligne de configuration, puis règle l'affichage du **nom** dans les listes de choix.
+1. **Installation** : cliquez sur **Créer / compléter les tables**. L'opération est répétable sans danger : elle ne supprime et n'écrase rien. Elle crée les 6 tables du § 3, amorce 5 types (café, boisson, petit-déjeuner, repas midi, repas soir) et une ligne de configuration, puis règle l'affichage du **nom** dans les listes de choix.
 2. **Règlement** : titulaire, IBAN (clé de contrôle vérifiée), numéro Wero. Ces valeurs sont stockées dans la table `Conso_Config`.
    - Le QR code est un **virement SEPA** (norme EPC) prérempli avec le montant dû, lisible par les applications bancaires.
    - Wero ne publie pas de format de QR ouvert : pour un QR Wero, collez dans « Contenu du QR » le contenu du code « Recevoir » de l'application Wero. Il remplace alors le virement SEPA.
@@ -46,9 +46,16 @@ Deux pages Grist, un même widget :
 
 Onglet **Suivi → Ajouter une consommation** (ou le même bouton dans la fiche d'une personne, qui présélectionne celle-ci) : choisissez le consommateur, la date et les quantités. Le formulaire reste ouvert pour enchaîner plusieurs saisies. La ligne est créée dans `Conso_Consommations` avec le commentaire « Saisie manuelle ». Réservé au gestionnaire par les permissions du § 4 (création ouverte à tous sur cette table : voir § 4.5).
 
+**Saisie en lot** : dans la même fenêtre, choisissez « En lot (plusieurs consommateurs) ». Tous les consommateurs actifs sont cochés par défaut (boutons « Tout cocher » / « Tout décocher ») ; les quantités saisies s'appliquent à **chaque** personne cochée, avec une ligne créée par personne (commentaire « Saisie manuelle (lot) »). Le résumé indique le montant par personne et le total avant l'enregistrement. Pratique pour une consommation commune (pot, repas partagé).
+
 ### Enregistrer un règlement
 
 Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le solde dû est indiqué dans la liste et proposé comme montant), la date, le montant et des observations (virement, espèces, chèque n°…). La fenêtre reste ouverte pour enchaîner. La ligne est créée dans `Conso_Reglements` ; un montant supérieur au solde donne un avoir. Dans la fiche d'une personne, on peut aussi enregistrer un règlement et supprimer un règlement saisi par erreur (suppression en deux clics). Écriture réservée au gestionnaire (§ 4.5).
+
+### Enregistrer les achats
+
+Onglet **Achats** : enregistrez ce que le gestionnaire achète pour la popote (café, lait, denrées…) : date, achat, fournisseur (facultatif), montant, observations. La date et le fournisseur restent préremplis pour enchaîner plusieurs achats. La liste peut être exportée en CSV, et un achat saisi par erreur se supprime en deux clics.
+Les indicateurs affichent le total des achats, le total encaissé (règlements) et la différence **encaissé − achats** (en rouge si elle est négative). Les achats n'entrent **pas** dans le solde des consommateurs.
 
 ## 3. Schéma des tables
 
@@ -103,6 +110,16 @@ Toutes les colonnes sont créées par le bouton. Les identifiants sont fixes (le
 | `Consommateur` | Référence → `Conso_Consommateurs` | Qui a payé |
 | `Montant` | Numérique | Euros |
 | `Observations` | Texte | Virement, espèces… |
+
+`Conso_Achats` (saisie par le gestionnaire)
+
+| Colonne | Type | Contenu |
+|---|---|---|
+| `Date` | Date | Date de l'achat |
+| `Libelle` | Texte | Ce qui a été acheté |
+| `Fournisseur` | Texte | Facultatif |
+| `Montant` | Numérique | Euros |
+| `Observations` | Texte | Facture n°, remboursé… |
 
 Calcul : **dû** = Σ (quantité × tarif du type), **solde** = dû − réglé. Les calculs sont faits en centimes. Un solde négatif s'affiche comme un avoir.
 
@@ -165,6 +182,8 @@ La création reste ouverte à tous pour que le **formulaire public** fonctionne.
 | 1 | `user.Access == OWNER or user.Gestionnaire.id` | ✔ | ✔ | ✔ | ✔ |
 | 2 | *(vide)* | ✘ | ✘ | ✘ | ✘ |
 
+`Conso_Achats` : mêmes règles que `Conso_Reglements` (gestionnaire seul en lecture, modification, création et suppression ; règle 2 : tout refusé).
+
 Facultatif : pour masquer les courriels des consommateurs, ajoutez sur `Conso_Consommateurs`, **colonne `Email`**, en tête : condition `user.Access == OWNER or user.Gestionnaire.id` → lecture ✔ ; puis tout le monde → lecture ✘.
 
 ### 4.6 Vérifier avec « Voir en tant que »
@@ -174,7 +193,7 @@ Dans la fenêtre des règles, utilisez **Voir en tant que** (utilisateur de test
 - [ ] Le gestionnaire (courriel de `Email_gestionnaire`) modifie `Conso_Config`, `Conso_Consommateurs`, `Conso_Types`.
 - [ ] Un autre utilisateur « éditeur » obtient un refus en modifiant, ajoutant ou supprimant une ligne de ces 3 tables. Dans le widget, un message « Droits insuffisants » s'affiche.
 - [ ] Le même utilisateur peut toujours **lire** `Conso_Config` : la page `?vue=regler` affiche le QR et l'IBAN.
-- [ ] Le même utilisateur ne peut ni modifier ni supprimer une consommation, et ne peut rien écrire dans `Conso_Reglements`.
+- [ ] Le même utilisateur ne peut ni modifier ni supprimer une consommation, et ne peut rien écrire dans `Conso_Reglements` ni `Conso_Achats`.
 - [ ] **Navigation privée, sans compte** : l'envoi du formulaire (§ 5) fonctionne toujours et la ligne arrive dans `Conso_Consommations`.
 - [ ] Courriel du gestionnaire **vide ou erroné** : seuls les propriétaires modifient (comportement voulu, sans blocage).
 
@@ -226,7 +245,7 @@ Le formulaire public ne vérifie pas l'identité de la personne : il fait confia
 
 ## 7. Tests
 
-**Automatiques** : `node --test test/` (10 tests : soldes en centimes, IBAN, QR SEPA, schéma, CSV, dates).
+**Automatiques** : `node --test test/` (11 tests : soldes en centimes, achats, IBAN, QR SEPA, schéma, CSV, dates).
 
 **À faire dans un vrai document Grist** (le faux Grist de `dev/` ne remplace pas Grist) :
 
