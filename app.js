@@ -295,33 +295,67 @@
     renderAdd(); var q0 = $('am-q0'); if (q0) q0.focus();
   }
 
-  /* Saisie rapide d'un règlement : personne, date, montant (proposé : le solde dû), observations ; reste ouvert pour enchaîner. */
+  /* Saisie rapide de règlements : un consommateur, ou en lot (une ligne par personne cochée, montant modifiable, proposé = solde dû). */
+  function dueRows() { return S.bal.rows.filter(function (o) { return o.soldeCents > 0; }); }
+  function rgInitBatch(a) { a.sel = {}; a.amts = {}; dueRows().forEach(function (o) { a.sel[o.id] = true; a.amts[o.id] = (o.soldeCents / 100).toFixed(2); }); }
   function openRg(id) {
-    S.detail = null; S.add = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '' };
+    S.detail = null; S.add = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '', mode: 'one', sel: null, amts: null };
     var o = bal(S.rg.id); if (o && o.soldeCents > 0) S.rg.amt = (o.soldeCents / 100).toFixed(2);
     renderRg(); var f = $(S.rg.id ? 'rg-amt' : 'rg-who'); if (f) f.focus();
   }
+  function readRg() { // recopie la saisie en cours avant tout réaffichage
+    var a = S.rg; if (!a || !$('rg-date')) return;
+    a.date = $('rg-date').value; a.obs = $('rg-obs').value.trim();
+    if (a.mode === 'batch') {
+      a.sel = {}; Array.prototype.forEach.call(document.querySelectorAll('#modal-body [data-rg-sel]'), function (e) { a.sel[e.value] = e.checked; });
+      Array.prototype.forEach.call(document.querySelectorAll('#modal-body [data-rg-amt]'), function (e) { a.amts[e.getAttribute('data-rg-amt')] = e.value; });
+    } else { a.id = Number($('rg-who').value) || 0; a.amt = $('rg-amt').value; }
+  }
+  function rgPicked() { // [{ o, amt }] des lignes cochées ; amt = NaN si le montant est invalide
+    var a = S.rg; return dueRows().filter(function (o) { return a.sel[o.id]; }).map(function (o) { return { o: o, amt: C.parseAmount(a.amts[o.id]) }; });
+  }
+  function rgSummary() {
+    var a = S.rg; if (!a || a.mode !== 'batch') return;
+    var p = rgPicked(), tot = p.reduce(function (s, x) { return s + (x.amt > 0 ? C.cents(x.amt) : 0); }, 0);
+    if ($('rg-count')) $('rg-count').textContent = p.length + ' personne' + (p.length > 1 ? 's' : '') + ' cochée' + (p.length > 1 ? 's' : '') + ' : ' + C.eur(tot) + ' au total';
+    var b = document.querySelector('#modal-body [data-act=rg-save]'); if (b) b.textContent = 'Enregistrer ' + p.length + ' règlement' + (p.length > 1 ? 's' : '');
+  }
   function renderRg() {
     var a = S.rg; if (!a) return;
-    var who = S.bal.rows.filter(function (o) { return o.actif || o.nConso || o.nPay || o.id === a.id; }), o = bal(a.id);
+    var batch = a.mode === 'batch', who = S.bal.rows.filter(function (o) { return o.actif || o.nConso || o.nPay || o.id === a.id; }), o = bal(a.id);
+    if (batch && !a.sel) rgInitBatch(a);
+    var due = dueRows();
     openModal('Enregistrer un règlement',
       (a.err ? '<div class="alert err" role="alert">' + esc(a.err) + '</div>' : '') + (a.ok ? '<div class="alert" role="status">' + esc(a.ok) + '</div>' : '') +
-      '<div class="grid"><div class="field"><label for="rg-who">Consommateur</label><select id="rg-who"><option value="0">— choisir —</option>' + who.map(function (x) { return '<option value="' + x.id + '"' + (x.id === a.id ? ' selected' : '') + '>' + esc(x.nom || '(sans nom)') + (x.soldeCents > 0 ? ' — doit ' + esc(C.eur(x.soldeCents)) : '') + '</option>'; }).join('') + '</select></div>' +
+      '<fieldset class="mode"><legend class="sr">Mode de saisie</legend><label><input type="radio" name="rg-mode" value="one"' + (batch ? '' : ' checked') + '> Un consommateur</label> <label><input type="radio" name="rg-mode" value="batch"' + (batch ? ' checked' : '') + '> En lot (plusieurs consommateurs)</label></fieldset>' +
+      '<div class="grid">' + (batch ? '' : '<div class="field"><label for="rg-who">Consommateur</label><select id="rg-who"><option value="0">— choisir —</option>' + who.map(function (x) { return '<option value="' + x.id + '"' + (x.id === a.id ? ' selected' : '') + '>' + esc(x.nom || '(sans nom)') + (x.soldeCents > 0 ? ' — doit ' + esc(C.eur(x.soldeCents)) : '') + '</option>'; }).join('') + '</select></div>') +
       '<div class="field"><label for="rg-date">Date</label><input type="date" id="rg-date" value="' + esc(a.date) + '"></div>' +
-      '<div class="field"><label for="rg-amt">Montant (€)</label><input id="rg-amt" inputmode="decimal" value="' + esc(a.amt) + '"></div>' +
+      (batch ? '' : '<div class="field"><label for="rg-amt">Montant (€)</label><input id="rg-amt" inputmode="decimal" value="' + esc(a.amt) + '"></div>') +
       '<div class="field"><label for="rg-obs">Observations</label><input id="rg-obs" value="' + esc(a.obs) + '" placeholder="Virement, espèces, chèque n°…"></div></div>' +
-      (o ? '<p class="hint">Solde actuel : ' + (o.soldeCents < 0 ? 'avoir ' + esc(C.eur(-o.soldeCents)) : esc(C.eur(o.soldeCents)) + ' dû') + '.</p>' : '') +
+      (batch ? '<h3>Personnes qui doivent encore de l’argent</h3><p class="toolbar"><button type="button" class="btn sec sm" data-act="rg-all">Tout cocher</button><button type="button" class="btn sec sm" data-act="rg-none">Tout décocher</button><span class="hint" id="rg-count" aria-live="polite"></span></p>' +
+        '<div class="scroll"><table><caption class="sr">Règlements à enregistrer</caption><thead><tr><th scope="col">Payé</th><th scope="col">Consommateur</th><th scope="col" class="n">Dû</th><th scope="col" class="n">Montant reçu (€)</th></tr></thead><tbody>' +
+        (due.map(function (x) { return '<tr><td><input type="checkbox" data-rg-sel value="' + x.id + '"' + (a.sel[x.id] ? ' checked' : '') + ' aria-label="Inclure ' + esc(x.nom) + '"></td><th scope="row">' + esc(x.nom || '(sans nom)') + '</th><td class="n">' + C.eur(x.soldeCents) + '</td><td class="n"><input data-rg-amt="' + x.id + '" inputmode="decimal" value="' + esc(a.amts[x.id] == null ? '' : a.amts[x.id]) + '" style="width:6.5rem;text-align:right" aria-label="Montant reçu de ' + esc(x.nom) + '"></td></tr>'; }).join('') || '<tr><td colspan="4" class="hint" style="text-align:center">Personne ne doit rien.</td></tr>') + '</tbody></table></div>'
+        : (o ? '<p class="hint">Solde actuel : ' + (o.soldeCents < 0 ? 'avoir ' + esc(C.eur(-o.soldeCents)) : esc(C.eur(o.soldeCents)) + ' dû') + '.</p>' : '')) +
       '<p><button type="button" class="btn" data-act="rg-save">Enregistrer</button> <button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    rgSummary();
   }
   async function rgSave() {
     var a = S.rg; if (!a) return;
-    a.id = Number($('rg-who').value) || 0; a.date = $('rg-date').value; a.amt = $('rg-amt').value; a.obs = $('rg-obs').value.trim(); a.ok = '';
-    var amt = C.parseAmount(a.amt), day = C.utcDay(a.date);
-    a.err = !a.id ? 'Choisissez le consommateur.' : !day ? 'Indiquez la date du règlement.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+    readRg(); a.ok = ''; var day = C.utcDay(a.date), acts = [], label = '';
+    if (!day) a.err = 'Indiquez la date du règlement.';
+    else if (a.mode === 'batch') {
+      var p = rgPicked(), bad = p.filter(function (x) { return !(x.amt > 0); })[0];
+      a.err = !p.length ? 'Cochez au moins une personne.' : bad ? 'Montant invalide pour ' + (bad.o.nom || '(sans nom)') + ' : indiquez un montant supérieur à 0 ou décochez la ligne.' : '';
+      if (!a.err) { acts = p.map(function (x) { return ['AddRecord', T.REGLEMENTS, null, { Date: day, Consommateur: x.o.id, Montant: x.amt, Observations: a.obs }]; }); label = p.length + ' règlements enregistrés (' + C.eur(p.reduce(function (s, x) { return s + C.cents(x.amt); }, 0)) + ').'; }
+    } else {
+      var amt = C.parseAmount(a.amt);
+      a.err = !a.id ? 'Choisissez le consommateur.' : !(amt > 0) ? 'Indiquez un montant supérieur à 0.' : '';
+      if (!a.err) { var o = bal(a.id); acts = [['AddRecord', T.REGLEMENTS, null, { Date: day, Consommateur: a.id, Montant: amt, Observations: a.obs }]]; label = 'Règlement de ' + C.eur(C.cents(amt)) + ' enregistré pour ' + (o ? o.nom : '') + '.'; }
+    }
     if (a.err) return renderRg();
-    var o = bal(a.id), r = await write([['AddRecord', T.REGLEMENTS, null, { Date: day, Consommateur: a.id, Montant: amt, Observations: a.obs }]]);
-    if (r && S.rg) { a.ok = 'Règlement de ' + C.eur(C.cents(amt)) + ' enregistré pour ' + (o ? o.nom : '') + '.'; a.id = 0; a.amt = ''; a.obs = ''; }
-    renderRg(); var f = $('rg-who'); if (f) f.focus();
+    var r = await write(acts);
+    if (r && S.rg) { a.ok = label; a.id = 0; a.amt = ''; a.obs = ''; if (a.mode === 'batch') rgInitBatch(a); }
+    renderRg(); var f = $(a.mode === 'batch' ? 'rg-date' : 'rg-who'); if (f) f.focus();
   }
 
   function exportCsv() {
@@ -485,6 +519,7 @@
     if (a === 'am-all' || a === 'am-none') { readAdd(); S.add.sel = a === 'am-all' ? activeIds() : []; return renderAdd(); }
     if (a === 'rg-open') return openRg(id || 0);
     if (a === 'rg-save') return rgSave();
+    if (a === 'rg-all' || a === 'rg-none') { readRg(); Object.keys(S.rg.sel).forEach(function (k) { S.rg.sel[k] = a === 'rg-all'; }); return renderRg(); }
     if (a === 'export') return exportCsv();
     if (a === 'create') return createTables();
     if (a === 'save-cfg') return saveCfg();
@@ -497,6 +532,7 @@
   document.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr.row')) { e.preventDefault(); openDetail(Number(e.target.getAttribute('data-id'))); } });
   document.addEventListener('input', function (e) {
     var t = e.target;
+    if (S.rg && t.getAttribute && t.hasAttribute('data-rg-amt')) { readRg(); rgSummary(); return; }
     if (S.add && t.id && /^am-q\d+$/.test(t.id)) { readAdd(); addSummary(); return; }
     if (t.id === 'q') { S.q = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cfg')) {
@@ -508,6 +544,8 @@
     var t = e.target;
     if (t.name === 'am-mode' && S.add) { readAdd(); S.add.mode = t.value; if (t.value === 'batch' && !S.add.sel) S.add.sel = activeIds(); return renderAdd(); }
     if (t.getAttribute && t.hasAttribute('data-am-sel') && S.add) { readAdd(); return addSummary(); }
+    if (t.name === 'rg-mode' && S.rg) { readRg(); S.rg.mode = t.value; if (t.value === 'batch' && !S.rg.sel) rgInitBatch(S.rg); return renderRg(); }
+    if (t.getAttribute && t.hasAttribute('data-rg-sel') && S.rg) { readRg(); return rgSummary(); }
     if (t.id === 'rg-who' && S.rg) { var o = bal(Number(t.value)), am = $('rg-amt'); if (am && !am.value.trim() && o && o.soldeCents > 0) am.value = (o.soldeCents / 100).toFixed(2); return; }
     if (t.id === 'f') { S.f = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);

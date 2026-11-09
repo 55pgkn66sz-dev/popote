@@ -52,6 +52,8 @@ Onglet **Suivi → Ajouter une consommation** (ou le même bouton dans la fiche 
 
 Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le solde dû est indiqué dans la liste et proposé comme montant), la date, le montant et des observations (virement, espèces, chèque n°…). La fenêtre reste ouverte pour enchaîner. La ligne est créée dans `Conso_Reglements` ; un montant supérieur au solde donne un avoir. Dans la fiche d'une personne, on peut aussi enregistrer un règlement et supprimer un règlement saisi par erreur (suppression en deux clics). Écriture réservée au gestionnaire (§ 4.5).
 
+**Règlements en lot** : choisissez « En lot (plusieurs consommateurs) ». La liste reprend les personnes qui doivent encore de l'argent, toutes cochées, avec le solde dû comme montant reçu. Modifiez un montant pour un paiement partiel, décochez ceux qui n'ont pas payé, puis enregistrez : la date et les observations sont communes, et un règlement est créé par personne cochée, en une seule opération (tout est enregistré ou rien). Un montant invalide bloque l'enregistrement et nomme la personne concernée. Après enregistrement, la liste ne garde que les soldes restants.
+
 ### Enregistrer les achats
 
 Onglet **Achats** : enregistrez ce que le gestionnaire achète pour la popote (café, lait, denrées…) : date, achat, fournisseur (facultatif), montant, observations. La date et le fournisseur restent préremplis pour enchaîner plusieurs achats. La liste peut être exportée en CSV, et un achat saisi par erreur se supprime en deux clics.
