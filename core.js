@@ -14,11 +14,14 @@
     TYPES: 'Conso_Types',
     CONSOMMATIONS: 'Conso_Consommations',
     REGLEMENTS: 'Conso_Reglements',
-    ACHATS: 'Conso_Achats'
+    ACHATS: 'Conso_Achats',
+    STOCKS: 'Conso_Stocks'
   };
 
   /* Colonnes de Conso_Consommations qui ne sont pas des types de consommation. */
   var RESERVED = ['id', 'manualSort', 'Date', 'Consommateur', 'Commentaire'];
+
+  var MOTIFS = { REAPPRO: 'Réapprovisionnement', PERTE: 'Perte ou casse', INVENTAIRE: 'Inventaire' };
 
   var DEFAULT_TYPES = [
     { libelle: 'Café', tarif: 0.5 }, { libelle: 'Boisson fraîche', tarif: 1 },
@@ -47,7 +50,8 @@
       { id: 'Libelle', type: 'Text', label: 'Libellé' },
       { id: 'Colonne', type: 'Text', label: 'Colonne' },
       { id: 'Tarif', type: 'Numeric', label: 'Tarif unitaire (€)' },
-      { id: 'Actif', type: 'Bool', label: 'Actif' }
+      { id: 'Actif', type: 'Bool', label: 'Actif' },
+      { id: 'Seuil_alerte', type: 'Numeric', label: 'Seuil d’alerte du stock' }
     ] },
     { id: T.CONSOMMATIONS, kind: 'saisie', ref: true, usage: 'Consommations déclarées (formulaire externe) ; une colonne Numeric par type', cols: [
       { id: 'Date', type: 'Date', label: 'Date', formula: 'TODAY()', recalcWhen: 0 },
@@ -58,6 +62,14 @@
       { id: 'Date', type: 'Date', label: 'Date' },
       { id: 'Consommateur', type: 'Ref:' + T.CONSOMMATEURS, label: 'Consommateur' },
       { id: 'Montant', type: 'Numeric', label: 'Montant (€)' },
+      { id: 'Observations', type: 'Text', label: 'Observations' }
+    ] },
+    { id: T.STOCKS, kind: 'saisie', usage: 'Mouvements de stock par type : réapprovisionnements, pertes, ajustements d’inventaire (le stock = mouvements − consommations)', cols: [
+      { id: 'Date', type: 'Date', label: 'Date' },
+      { id: 'Colonne', type: 'Text', label: 'Colonne du type' },
+      { id: 'Libelle', type: 'Text', label: 'Type' },
+      { id: 'Quantite', type: 'Numeric', label: 'Quantité (+ entrée, − sortie)' },
+      { id: 'Motif', type: 'Choice', label: 'Motif', choices: [MOTIFS.REAPPRO, MOTIFS.PERTE, MOTIFS.INVENTAIRE] },
       { id: 'Observations', type: 'Text', label: 'Observations' }
     ] },
     { id: T.ACHATS, kind: 'saisie', usage: 'Achats de fournitures faits par le gestionnaire (café, denrées…)', cols: [
@@ -122,7 +134,7 @@
   /* Types : lignes de Conso_Types -> [{ id, libelle, colonne, prix (€), actif }] ; sans colonne, la ligne est ignorée. */
   function readTypes(rows) {
     return (rows || []).filter(function (r) { return r.Libelle && r.Colonne; }).map(function (r) {
-      return { id: r.id, libelle: String(r.Libelle), colonne: String(r.Colonne), prix: Number(r.Tarif) || 0, actif: r.Actif !== false && r.Actif !== 0 };
+      return { id: r.id, libelle: String(r.Libelle), colonne: String(r.Colonne), prix: Number(r.Tarif) || 0, actif: r.Actif !== false && r.Actif !== 0, seuil: Math.max(0, Number(r.Seuil_alerte) || 0) };
     });
   }
 
@@ -161,11 +173,38 @@
     return { totalCents: tot, n: (rows || []).length, caisseCents: (paidCents || 0) - tot };
   }
 
+  /* Stock par type = réapprovisionnements − pertes ± inventaires − consommations (toutes les quantités des consommations).
+     Autonomie = stock / consommation moyenne par jour sur les 30 derniers jours (today : secondes UTC de minuit, comme les dates Grist). */
+  function r3(x) { return Math.round(x * 1000) / 1000; }
+  function stockData(d) {
+    var types = d.types || [], by = {}, today = d.today || 0, since = today - 29 * 86400;
+    var rows = types.map(function (t) { var o = { colonne: t.colonne, libelle: t.libelle, actif: t.actif, seuil: t.seuil || 0, recu: 0, pertes: 0, ajust: 0, conso: 0, conso30: 0 }; by[t.colonne] = o; return o; });
+    (d.consommations || []).forEach(function (r) {
+      var dt = Number(r.Date) || 0;
+      types.forEach(function (t) { var q = Number(r[t.colonne]); if (!isFinite(q)) return; var o = by[t.colonne]; o.conso += q; if (today && dt >= since && dt <= today) o.conso30 += q; });
+    });
+    var orphans = 0;
+    (d.mouvements || []).forEach(function (m) {
+      var o = by[m.Colonne], q = Number(m.Quantite); if (!o || !isFinite(q)) { orphans++; return; }
+      if (m.Motif === MOTIFS.PERTE) o.pertes += q; else if (m.Motif === MOTIFS.INVENTAIRE) o.ajust += q; else o.recu += q;
+    });
+    rows.forEach(function (o) {
+      o.recu = r3(o.recu); o.pertes = r3(o.pertes); o.ajust = r3(o.ajust); o.conso = r3(o.conso);
+      o.stock = r3(o.recu + o.pertes + o.ajust - o.conso);
+      o.parJour = today ? o.conso30 / 30 : 0;
+      o.autonomie = o.stock > 0 && o.parJour > 0 ? Math.floor(o.stock / o.parJour) : null;
+      o.suivi = !!(o.recu || o.pertes || o.ajust || o.conso);   // type jamais mouvementé ni consommé : pas de suivi, pas d'alerte
+      o.etat = !o.suivi ? 'none' : o.stock < 0 ? 'neg' : o.stock === 0 ? 'rupture' : o.seuil > 0 && o.stock <= o.seuil ? 'bas' : 'ok';
+    });
+    return { rows: rows, orphans: orphans };
+  }
+
   function status(o) { return o.soldeCents > 0 ? 'due' : o.soldeCents < 0 ? 'over' : (o.nConso || o.nPay ? 'ok' : 'none'); }
 
   /* ---------- Création / complétion du schéma ---------- */
   function colSpec(c) {
     var o = { id: c.id, type: c.type, isFormula: false, label: c.label || c.id };
+    if (c.choices) o.widgetOptions = JSON.stringify({ choices: c.choices });
     if (c.formula) { o.formula = c.formula; o.recalcWhen = c.recalcWhen == null ? 0 : c.recalcWhen; o.recalcDeps = null; } // formule de déclenchement : à la création de la ligne
     return o;
   }
@@ -239,7 +278,7 @@
     T: T, SCHEMA: SCHEMA, RESERVED: RESERVED, DEFAULT_TYPES: DEFAULT_TYPES,
     norm: norm, csoId: csoId, uniqueColId: uniqueColId, cents: cents, eur: eur, parseAmount: parseAmount,
     ibanClean: ibanClean, ibanFmt: ibanFmt, ibanOk: ibanOk, weroPayload: weroPayload, isHttpUrl: isHttpUrl,
-    readConfig: readConfig, achatsTotals: achatsTotals, readTypes: readTypes, computeBalances: computeBalances, status: status,
+    readConfig: readConfig, achatsTotals: achatsTotals, stockData: stockData, MOTIFS: MOTIFS, readTypes: readTypes, computeBalances: computeBalances, status: status,
     schemaStatus: schemaStatus, addTableAction: addTableAction, addColumnActions: addColumnActions, typeColSpec: typeColSpec, defOf: defOf,
     refDisplayActions: refDisplayActions, csv: csv, csvCell: csvCell, utcDay: utcDay, dmy: dmy, isoDay: isoDay
   };

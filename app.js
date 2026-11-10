@@ -8,7 +8,7 @@
   var S = {
     tab: VUE_REGLER ? 'regler' : 'suivi', names: [], cols: {}, denied: {}, loaded: false, busy: false, err: '',
     cfgRows: [], cfg: C.readConfig([]), consommateurs: [], typesRaw: [], types: [], consommations: [], reglements: [], achats: [], ach: { date: '', lib: '', four: '', amt: '', obs: '', err: '', ok: '', del: null }, meta: null,
-    bal: null, q: '', f: '', detail: null, add: null, rg: null, edit: null, draft: null, schema: []
+    bal: null, q: '', f: '', detail: null, add: null, rg: null, edit: null, sk: null, skDel: null, stocks: [], draft: null, schema: []
   };
   var qrLib = null;
 
@@ -44,6 +44,7 @@
     S.consommations = (await tbl(T.CONSOMMATIONS)) || [];
     S.reglements = (await tbl(T.REGLEMENTS)) || [];
     S.achats = (await tbl(T.ACHATS)) || [];
+    S.stocks = (await tbl(T.STOCKS)) || [];
     try { var a = await G().fetchTable('_grist_Tables'), b = await G().fetchTable('_grist_Tables_column'); S.meta = { tables: a, cols: b }; } catch (e) { S.meta = null; }
     S.schema = C.schemaStatus(S.names, S.cols, S.types);
     S.bal = C.computeBalances({ types: S.types, consommateurs: S.consommateurs, consommations: S.consommations, reglements: S.reglements });
@@ -61,7 +62,7 @@
       await load(); S.err = ''; if (okMsg) toast('ok', okMsg);
       return r && r.retValues ? r.retValues : [];
     } catch (e) { toast('error', 'Enregistrement impossible : ' + errText(e)); try { await load(); } catch (e2) {} return null; }
-    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); else if (S.rg && $('modal').open) renderRg(); else if (S.edit && $('modal').open) renderEdit(); }
+    finally { S.busy = false; render(); if (S.detail && $('modal').open) renderDetail(); else if (S.add && $('modal').open) renderAdd(); else if (S.rg && $('modal').open) renderRg(); else if (S.edit && $('modal').open) renderEdit(); else if (S.sk && $('modal').open) renderSk(); }
   }
 
   /* ---------- QR codes ---------- */
@@ -94,7 +95,7 @@
       (c.numero ? '<dt>Numéro Wero</dt><dd>' + esc(c.numero) + '</dd>' : '') + '</dl></section>';
   }
   function showPay(title, opt) {
-    S.detail = null; S.add = null; S.rg = null; S.edit = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; S.edit = null; S.sk = null; openModal(title, payCard(opt) + '<p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', C.weroPayload(S.cfg, opt || {}));
   }
   function formBlock() {
@@ -104,19 +105,19 @@
     return '<p><a class="btn" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Déclarer une consommation</a> <button type="button" class="btn sec" data-act="form-qr">QR code du formulaire</button></p>';
   }
   function showFormQr() {
-    S.detail = null; S.add = null; S.rg = null; S.edit = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+    S.detail = null; S.add = null; S.rg = null; S.edit = null; S.sk = null; openModal('Formulaire de consommation', '<div class="pay"><div class="qr" id="qr-slot"></div><p class="hint">' + esc(S.cfg.lien) + '</p></div><p style="text-align:center"><button type="button" class="btn sec" data-act="close">Fermer</button></p>');
     drawQr('qr-slot', S.cfg.lien);
   }
 
   /* ---------- Vues ---------- */
   function render() {
-    var nav = $('tabs'), tabs = VUE_REGLER ? [] : [['suivi', 'Suivi'], ['achats', 'Achats'], ['regler', 'Régler'], ['bo', 'Back office']];
+    var nav = $('tabs'), tabs = VUE_REGLER ? [] : [['suivi', 'Suivi'], ['achats', 'Achats'], ['stocks', 'Stocks'], ['regler', 'Régler'], ['bo', 'Back office']];
     nav.innerHTML = tabs.map(function (t) { return '<button type="button" role="tab" data-act="tab" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>'; }).join('');
     var app = $('app');
     if (S.err) { app.innerHTML = '<div class="alert err" role="alert">' + esc(S.err) + '</div>'; return; }
     if (!S.loaded) { app.innerHTML = '<p class="hint">Chargement…</p>'; return; }
     if (S.tab === 'achats' && !S.ach.date) S.ach.date = localIso();
-    app.innerHTML = S.tab === 'bo' ? viewBO() : S.tab === 'regler' ? viewRegler() : S.tab === 'achats' ? viewAchats() : viewSuivi();
+    app.innerHTML = S.tab === 'bo' ? viewBO() : S.tab === 'regler' ? viewRegler() : S.tab === 'achats' ? viewAchats() : S.tab === 'stocks' ? viewStocks() : viewSuivi();
     if (S.tab === 'regler') drawQr('qr-slot', C.weroPayload(S.cfg, {}));
   }
   function missingBanner() {
@@ -162,8 +163,8 @@
 
   /* ---------- Fiche d'un consommateur ---------- */
   function openModal(title, html) { $('modal-title').textContent = title; $('modal-body').innerHTML = html; if (!$('modal').open) $('modal').showModal(); }
-  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; S.rg = null; S.edit = null; }
-  function openDetail(id) { S.add = null; S.rg = null; S.edit = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
+  function closeModal() { if ($('modal').open) $('modal').close(); S.detail = null; S.add = null; S.rg = null; S.edit = null; S.sk = null; }
+  function openDetail(id) { S.add = null; S.rg = null; S.edit = null; S.sk = null; S.detail = { id: id, err: '', del: null }; renderDetail(); }
   function renderDetail() {
     var d = S.detail, o = d && bal(d.id); if (!o) return closeModal();
     var T2 = S.types, act = T2.filter(function (t) { return t.actif; }), today = localIso();
@@ -197,6 +198,82 @@
       if (d.del !== key) { d.del = key; return renderDetail(); }
       d.del = null; return write([['RemoveRecord', a === 'del-p' ? T.REGLEMENTS : T.CONSOMMATIONS, id]], 'Supprimé.');
     }
+  }
+
+  /* ---------- Stocks (selon les consommations) ---------- */
+  function today() { return C.utcDay(localIso()); }
+  function stockRows() { return C.stockData({ types: S.types, consommations: S.consommations, mouvements: S.stocks, today: today() }); }
+  function fmtQ(n) { return String(Math.round(n * 1000) / 1000).replace('.', ','); }
+  function viewStocks() {
+    var ok = !!realName(T.STOCKS);
+    if (!ok) return missingBanner() + deniedBanner();
+    var sd = stockRows(), seuilOk = (S.cols[T.TYPES] || []).indexOf('Seuil_alerte') !== -1;
+    var list = sd.rows.filter(function (r) { return r.actif || r.stock !== 0 || r.recu || r.conso; });
+    var alerts = list.filter(function (r) { return r.actif && (r.etat === 'bas' || r.etat === 'rupture' || r.etat === 'neg'); });
+    var lab = { none: ['none', 'Non suivi'], ok: ['ok', 'OK'], bas: ['due', 'Stock bas'], rupture: ['due', 'Rupture'], neg: ['due', 'Négatif'] };
+    var mv = S.stocks.slice().sort(function (a, b) { return (Number(b.Date) || 0) - (Number(a.Date) || 0) || b.id - a.id; });
+    return missingBanner() + deniedBanner() +
+      (seuilOk ? '' : '<div class="alert warn">La colonne « Seuil d’alerte » manque dans <code>' + T.TYPES + '</code> : cliquez sur « Créer / compléter les tables » dans le Back office.</div>') +
+      (alerts.length ? '<div class="alert warn" role="status"><strong>À réapprovisionner :</strong> ' + alerts.map(function (r) { return esc(r.libelle) + ' (' + fmtQ(r.stock) + ')'; }).join(', ') + '.</div>' : '') +
+      (sd.orphans ? '<div class="alert warn">' + sd.orphans + ' mouvement(s) de stock ne correspondent à aucun type (type supprimé ou colonne renommée) : non comptés.</div>' : '') +
+      '<div class="toolbar"><button type="button" class="btn" data-act="sk-in">Réapprovisionnement / perte</button><button type="button" class="btn" data-act="sk-inv">Inventaire</button></div>' +
+      '<p class="hint">Stock = réapprovisionnements − pertes ± inventaires − consommations déclarées. Autonomie = stock ÷ consommation moyenne par jour sur les 30 derniers jours. Si le stock est négatif, faites un inventaire pour le remettre à la valeur comptée.</p>' +
+      '<div class="scroll" style="max-height:50vh"><table><caption class="sr">Stock par type de consommation</caption><thead><tr><th scope="col">Type</th><th scope="col" class="n">Reçu</th><th scope="col" class="n">Pertes</th><th scope="col" class="n">Ajust.</th><th scope="col" class="n">Consommé</th><th scope="col" class="n">Stock</th><th scope="col" class="n">Seuil d’alerte</th><th scope="col" class="n">Autonomie</th><th scope="col">État</th></tr></thead><tbody>' +
+      (list.map(function (r) {
+        var t = S.types.filter(function (x) { return x.colonne === r.colonne; })[0], l = lab[r.etat];
+        return '<tr><th scope="row">' + esc(r.libelle) + (r.actif ? '' : ' <span class="hint">(archivé)</span>') + '</th><td class="n">' + fmtQ(r.recu) + '</td><td class="n">' + fmtQ(r.pertes) + '</td><td class="n">' + fmtQ(r.ajust) + '</td><td class="n">' + fmtQ(r.conso) + '</td><td class="n"><strong>' + fmtQ(r.stock) + '</strong></td>' +
+          '<td class="n"><input data-sk-seuil="' + (t ? t.id : 0) + '" inputmode="decimal" value="' + (r.seuil ? fmtQ(r.seuil) : '') + '" placeholder="—" style="width:5rem;text-align:right" aria-label="Seuil d’alerte de ' + esc(r.libelle) + '"' + (seuilOk && t ? '' : ' disabled') + '></td>' +
+          '<td class="n">' + (r.autonomie === null ? '—' : r.autonomie + ' j') + '</td><td><span class="tag ' + l[0] + '">' + l[1] + '</span></td></tr>';
+      }).join('') || '<tr><td colspan="9" class="hint" style="text-align:center">Aucun type de consommation.</td></tr>') + '</tbody></table></div>' +
+      '<h2>Mouvements de stock (' + mv.length + ')</h2><div class="scroll" style="max-height:40vh"><table><caption class="sr">Mouvements de stock</caption><thead><tr><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Motif</th><th scope="col" class="n">Quantité</th><th scope="col">Observations</th><th scope="col"><span class="sr">Action</span></th></tr></thead><tbody>' +
+      (mv.map(function (m) {
+        var d = Number(m.Date), q = Number(m.Quantite) || 0, conf = S.skDel === m.id, ty = S.types.filter(function (x) { return x.colonne === m.Colonne; })[0];
+        return '<tr><td>' + (d ? C.dmy(d) : '—') + '</td><td>' + esc(ty ? ty.libelle : (m.Libelle || m.Colonne || '?')) + '</td><td>' + esc(m.Motif || '') + '</td><td class="n">' + (q > 0 ? '+' : '') + fmtQ(q) + '</td><td>' + esc(m.Observations || '') + '</td><td class="n"><button type="button" class="btn ' + (conf ? 'danger' : 'sec') + ' sm" data-act="sk-del" data-id="' + m.id + '">' + (conf ? 'Confirmer' : 'Supprimer') + '</button></td></tr>';
+      }).join('') || '<tr><td colspan="6" class="hint" style="text-align:center">Aucun mouvement. Commencez par un inventaire pour saisir le stock actuel.</td></tr>') + '</tbody></table></div>';
+  }
+  function openSk(kind) { S.detail = null; S.add = null; S.rg = null; S.edit = null; S.skDel = null; S.sk = { kind: kind, date: localIso(), motif: C.MOTIFS.REAPPRO, q: {}, obs: '', err: '', ok: '' }; renderSk(); var f = $('sk-q0'); if (f) f.focus(); }
+  function readSk() {
+    var k = S.sk; if (!k || !$('sk-date')) return;
+    k.date = $('sk-date').value; k.obs = $('sk-obs').value.trim(); if ($('sk-motif')) k.motif = $('sk-motif').value;
+    skTypes().forEach(function (t, i) { var e = $('sk-q' + i); if (e) k.q[t.colonne] = e.value; });
+  }
+  function skTypes() { return S.types.filter(function (t) { return S.sk.kind === 'inv' ? true : t.actif; }).filter(function (t) { return S.sk.kind !== 'inv' || t.actif || (stockRows().rows.filter(function (r) { return r.colonne === t.colonne; })[0] || {}).stock; }); }
+  function renderSk() {
+    var k = S.sk; if (!k) return; var inv = k.kind === 'inv', th = {};
+    stockRows().rows.forEach(function (r) { th[r.colonne] = r; });
+    openModal(inv ? 'Inventaire' : 'Réapprovisionnement / perte',
+      (k.err ? '<div class="alert err" role="alert">' + esc(k.err) + '</div>' : '') + (k.ok ? '<div class="alert" role="status">' + esc(k.ok) + '</div>' : '') +
+      (inv ? '<p class="hint">Saisissez la quantité <strong>comptée</strong> pour chaque type. Les types laissés vides sont ignorés. L’écart avec le stock théorique est enregistré comme ajustement « Inventaire ».</p>' : '') +
+      '<div class="grid"><div class="field"><label for="sk-date">Date</label><input type="date" id="sk-date" value="' + esc(k.date) + '"></div>' +
+      (inv ? '' : '<div class="field"><label for="sk-motif">Motif</label><select id="sk-motif"><option' + (k.motif === C.MOTIFS.REAPPRO ? ' selected' : '') + '>' + C.MOTIFS.REAPPRO + '</option><option' + (k.motif === C.MOTIFS.PERTE ? ' selected' : '') + '>' + C.MOTIFS.PERTE + '</option></select></div>') +
+      '<div class="field"><label for="sk-obs">Observations</label><input id="sk-obs" value="' + esc(k.obs) + '" placeholder="' + (inv ? 'Comptage du…' : 'Livraison, bon n°…') + '" autocomplete="off"></div></div>' +
+      '<h3>' + (inv ? 'Quantités comptées' : 'Quantités (positives)') + '</h3><div class="grid">' + skTypes().map(function (t, i) { var r = th[t.colonne]; return '<div class="field"><label for="sk-q' + i + '">' + esc(t.libelle) + (inv && r ? ' <span class="hint">(théorique : ' + fmtQ(r.stock) + ')</span>' : '') + '</label><input type="number" min="0" step="any" id="sk-q' + i + '" value="' + esc(k.q[t.colonne] || '') + '"></div>'; }).join('') + '</div>' +
+      '<p><button type="button" class="btn" data-act="sk-save">Enregistrer</button> <button type="button" class="btn sec" data-act="close">Fermer</button></p>');
+  }
+  async function saveSk() {
+    var k = S.sk; if (!k) return; readSk(); k.ok = '';
+    var day = C.utcDay(k.date), inv = k.kind === 'inv', th = {}, acts = [], neg = false, bad = false;
+    stockRows().rows.forEach(function (r) { th[r.colonne] = r; });
+    skTypes().forEach(function (t) {
+      var raw = String(k.q[t.colonne] || '').trim(); if (raw === '') return;
+      var n = C.parseAmount(raw); if (!isFinite(n) || n < 0) { neg = true; return; }
+      var f = { Date: day, Colonne: t.colonne, Libelle: t.libelle, Observations: k.obs };
+      if (inv) { var diff = Math.round((n - (th[t.colonne] ? th[t.colonne].stock : 0)) * 1000) / 1000; if (!diff) return; f.Quantite = diff; f.Motif = C.MOTIFS.INVENTAIRE; }
+      else { if (!n) return; f.Quantite = k.motif === C.MOTIFS.PERTE ? -n : n; f.Motif = k.motif; }
+      acts.push(['AddRecord', T.STOCKS, null, f]);
+    });
+    k.err = !day ? 'Indiquez la date.' : neg ? 'Quantités invalides : des nombres positifs ou nuls sont attendus.' : !acts.length ? (inv ? 'Aucun écart à enregistrer : saisissez au moins une quantité différente du stock théorique.' : 'Indiquez au moins une quantité.') : '';
+    if (k.err) return renderSk();
+    var r = await write(acts);
+    if (r && S.sk) { k.ok = acts.length + (inv ? ' ajustement(s) d’inventaire' : ' mouvement(s)') + ' enregistré(s).'; k.q = {}; k.obs = ''; }
+    renderSk();
+  }
+  async function delStock(id) { readSkNone(); if (S.skDel !== id) { S.skDel = id; return render(); } S.skDel = null; await write([['RemoveRecord', T.STOCKS, id]], 'Mouvement supprimé.'); }
+  function readSkNone() {}
+  async function editSeuil(el) {
+    var id = Number(el.getAttribute('data-sk-seuil')), raw = el.value.trim(), v = raw === '' ? 0 : C.parseAmount(raw);
+    if (!id || !(v >= 0)) { toast('error', 'Seuil invalide.'); return refresh(); }
+    await write([['UpdateRecord', T.TYPES, id, { Seuil_alerte: v }]], 'Seuil enregistré.');
   }
 
   /* ---------- Achats (fournitures achetées par le gestionnaire) ---------- */
@@ -253,7 +330,7 @@
   function typeCols() { return S.types.filter(function (t) { return (S.cols[T.CONSOMMATIONS] || []).indexOf(t.colonne) !== -1; }); }
   function openEdit(kind, id) {
     var rows = kind === 'a' ? S.achats : kind === 'c' ? S.consommations : S.reglements, r = rows.filter(function (x) { return x.id === id; })[0]; if (!r) return;
-    S.detail = null; S.add = null; S.rg = null;
+    S.detail = null; S.add = null; S.rg = null; S.sk = null;
     var d = Number(r.Date), e = S.edit = { kind: kind, id: id, who: Number(r.Consommateur) || 0, date: d ? C.isoDay(d) : '', lib: r.Libelle || '', four: r.Fournisseur || '', amt: amtStr(r.Montant), obs: r.Observations || '', com: r.Commentaire || '', q: {}, err: '' };
     e.back = e.who;
     if (kind === 'c') typeCols().forEach(function (t) { e.q[t.colonne] = amtStr(r[t.colonne]); });
@@ -294,13 +371,13 @@
     }
     if (e.err) return renderEdit();
     var r = await write([['UpdateRecord', table, e.id, f]], 'Modification enregistrée.');
-    if (r && S.edit) { var back = e.kind === 'a' ? 0 : e.who; S.edit = null; if (back) openDetail(back); else closeModal(); }
+    if (r && S.edit) { var back = e.kind === 'a' ? 0 : e.who; S.edit = null; S.sk = null; if (back) openDetail(back); else closeModal(); }
   }
-  function cancelEdit() { var back = S.edit && S.edit.kind !== 'a' ? S.edit.back : 0; S.edit = null; if (back && bal(back)) openDetail(back); else closeModal(); }
+  function cancelEdit() { var back = S.edit && S.edit.kind !== 'a' ? S.edit.back : 0; S.edit = null; S.sk = null; if (back && bal(back)) openDetail(back); else closeModal(); }
 
   /* Saisie manuelle rapide, pour une personne ou en lot (une ligne par personne cochée). Le formulaire reste ouvert pour enchaîner. */
   function activeIds() { return S.bal.rows.filter(function (o) { return o.actif; }).map(function (o) { return o.id; }); }
-  function openAdd(id) { S.detail = null; S.rg = null; S.edit = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '', mode: 'one', sel: null }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
+  function openAdd(id) { S.detail = null; S.rg = null; S.edit = null; S.sk = null; S.add = { id: id || 0, date: localIso(), q: {}, err: '', ok: '', mode: 'one', sel: null }; renderAdd(); var f = $(S.add.id ? 'am-q0' : 'am-who'); if (f) f.focus(); }
   function readAdd() { // recopie la saisie en cours avant tout réaffichage
     var a = S.add; if (!a || !$('am-date')) return;
     a.date = $('am-date').value;
@@ -349,7 +426,7 @@
   function dueRows() { return S.bal.rows.filter(function (o) { return o.soldeCents > 0; }); }
   function rgInitBatch(a) { a.sel = {}; a.amts = {}; dueRows().forEach(function (o) { a.sel[o.id] = true; a.amts[o.id] = (o.soldeCents / 100).toFixed(2); }); }
   function openRg(id) {
-    S.detail = null; S.add = null; S.edit = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '', mode: 'one', sel: null, amts: null };
+    S.detail = null; S.add = null; S.edit = null; S.sk = null; S.rg = { id: id || 0, date: localIso(), amt: '', obs: '', err: '', ok: '', mode: 'one', sel: null, amts: null };
     var o = bal(S.rg.id); if (o && o.soldeCents > 0) S.rg.amt = (o.soldeCents / 100).toFixed(2);
     renderRg(); var f = $(S.rg.id ? 'rg-amt' : 'rg-who'); if (f) f.focus();
   }
@@ -564,6 +641,9 @@
     if (a === 'ed-a' || a === 'ed-c' || a === 'ed-p') return openEdit(a.slice(3), id);
     if (a === 'ed-save') return saveEdit();
     if (a === 'ed-cancel') return cancelEdit();
+    if (a === 'sk-in' || a === 'sk-inv') return openSk(a === 'sk-in' ? 'in' : 'inv');
+    if (a === 'sk-save') return saveSk();
+    if (a === 'sk-del') return delStock(id);
     if (a === 'ac-save') return saveAchat();
     if (a === 'ac-del') return delAchat(id);
     if (a === 'ac-export') return exportAchats();
@@ -600,11 +680,12 @@
     if (t.name === 'rg-mode' && S.rg) { readRg(); S.rg.mode = t.value; if (t.value === 'batch' && !S.rg.sel) rgInitBatch(S.rg); return renderRg(); }
     if (t.getAttribute && t.hasAttribute('data-rg-sel') && S.rg) { readRg(); return rgSummary(); }
     if (t.id === 'rg-who' && S.rg) { var o = bal(Number(t.value)), am = $('rg-amt'); if (am && !am.value.trim() && o && o.soldeCents > 0) am.value = (o.soldeCents / 100).toFixed(2); return; }
+    if (t.getAttribute && t.hasAttribute('data-sk-seuil')) return editSeuil(t);
     if (t.id === 'f') { S.f = t.value; $('suivi-table').innerHTML = tableSuivi(); return; }
     if (t.getAttribute && t.getAttribute('data-cs')) return editCons(t);
     if (t.getAttribute && t.getAttribute('data-ty')) return editType(t);
   });
-  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; S.rg = null; S.edit = null; });
+  $('modal').addEventListener('close', function () { S.detail = null; S.add = null; S.rg = null; S.edit = null; S.sk = null; });
   $('refresh').addEventListener('click', function () { refresh(); });
 
   /* ---------- Démarrage ---------- */

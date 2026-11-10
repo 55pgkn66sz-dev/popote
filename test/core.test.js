@@ -78,7 +78,7 @@ test('analyse de montant et affichage €', () => {
 test('état du schéma et actions', () => {
   const types = [{ colonne: 'Cafe', libelle: 'Café' }];
   let st = C.schemaStatus([], {}, types);
-  assert.equal(st.length, 6); assert.ok(st.every(s => !s.exists));
+  assert.equal(st.length, 7); assert.ok(st.every(s => !s.exists));
   st = C.schemaStatus(['conso_config', 'Conso_Consommations'], { Conso_Consommations: ['Date', 'Consommateur', 'Commentaire'] }, types);
   assert.ok(st.find(s => s.id === 'Conso_Consommations').missing.map(c => c.id).join() === 'Cafe');
   const add = C.addTableAction(C.defOf('Conso_Consommations'), types);
@@ -114,6 +114,47 @@ test('achats : total et trésorerie en centimes', () => {
   assert.deepEqual(r, { totalCents: 1230, n: 3, caisseCents: 3770 });
   assert.deepEqual(C.achatsTotals([], 0), { totalCents: 0, n: 0, caisseCents: 0 });
   assert.ok(C.SCHEMA.find(t => t.id === 'Conso_Achats' && !t.ref));   // créée avant les tables à références
+});
+
+test('stock : mouvements − consommations, seuil, autonomie', () => {
+  const day = 86400, today = C.utcDay('2026-03-31');
+  const types = C.readTypes([
+    { id: 1, Libelle: 'Café', Colonne: 'Cafe', Tarif: 0.5, Actif: true, Seuil_alerte: 10 },
+    { id: 2, Libelle: 'Repas', Colonne: 'Repas', Tarif: 6, Actif: true },
+    { id: 3, Libelle: 'Ancien', Colonne: 'Ancien', Tarif: 1, Actif: false }
+  ]);
+  assert.equal(types[0].seuil, 10);
+  const M = C.MOTIFS;
+  const r = C.stockData({
+    types, today,
+    consommations: [
+      { Date: today, Cafe: 30, Repas: 2 },
+      { Date: today - 10 * day, Cafe: 30 },
+      { Date: today - 60 * day, Cafe: 100 },          // hors des 30 jours : compté dans le stock, pas dans le rythme
+      { Date: today, Cafe: 'x' }
+    ],
+    mouvements: [
+      { Colonne: 'Cafe', Quantite: 200, Motif: M.REAPPRO }, { Colonne: 'Cafe', Quantite: -5, Motif: M.PERTE }, { Colonne: 'Cafe', Quantite: 1, Motif: M.INVENTAIRE },
+      { Colonne: 'Repas', Quantite: 2, Motif: M.REAPPRO }, { Colonne: 'Inconnu', Quantite: 9, Motif: M.REAPPRO }
+    ]
+  });
+  const c = r.rows.find(x => x.colonne === 'Cafe'), p = r.rows.find(x => x.colonne === 'Repas'), a = r.rows.find(x => x.colonne === 'Ancien');
+  assert.equal(c.stock, 200 - 5 + 1 - 160); assert.equal(c.stock, 36); assert.equal(c.etat, 'ok');
+  assert.equal(c.autonomie, Math.floor(36 / (60 / 30)));     // 60 consommés sur 30 jours -> 2 / jour
+  assert.equal(p.stock, 0); assert.equal(p.etat, 'rupture'); assert.equal(p.autonomie, null);
+  assert.equal(a.stock, 0); assert.equal(a.etat, 'none'); assert.equal(r.orphans, 1);
+  const bas = C.stockData({ types, today, consommations: [{ Date: today, Cafe: 195 }], mouvements: [{ Colonne: 'Cafe', Quantite: 200, Motif: M.REAPPRO }] }).rows[0];
+  assert.equal(bas.etat, 'bas');
+  const neg = C.stockData({ types, today, consommations: [{ Date: today, Cafe: 1 }], mouvements: [] }).rows[0];
+  assert.equal(neg.stock, -1); assert.equal(neg.etat, 'neg');
+  assert.equal(C.stockData({ types, consommations: [{ Cafe: 0.1 }, { Cafe: 0.2 }], mouvements: [{ Colonne: 'Cafe', Quantite: 0.3, Motif: M.REAPPRO }] }).rows[0].stock, 0);   // pas d'erreur flottante
+});
+
+test('schéma : choix du motif et seuil des types', () => {
+  const st = C.defOf('Conso_Stocks'), act = C.addTableAction(st, []);
+  assert.deepEqual(JSON.parse(act[2].find(c => c.id === 'Motif').widgetOptions).choices, ['Réapprovisionnement', 'Perte ou casse', 'Inventaire']);
+  assert.ok(C.defOf('Conso_Types').cols.some(c => c.id === 'Seuil_alerte'));
+  assert.ok(!st.ref);
 });
 
 test('dates UTC', () => {

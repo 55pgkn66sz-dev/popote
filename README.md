@@ -24,7 +24,7 @@ Deux pages Grist, un même widget :
 
 | Page | URL du widget | Public | Onglets |
 |---|---|---|---|
-| Gestion | `…/index.html` | le gestionnaire | Suivi, Achats, Régler, Back office |
+| Gestion | `…/index.html` | le gestionnaire | Suivi, Achats, Stocks, Régler, Back office |
 | Consommateurs | `…/index.html?vue=regler` | tout le monde | Régler uniquement (QR, IBAN, Wero, lien du formulaire) |
 
 > **Le widget n'est pas un garde-fou.** Cacher un onglet n'empêche rien : seules les permissions avancées du § 4 protègent les données.
@@ -33,7 +33,7 @@ Deux pages Grist, un même widget :
 
 ## 2. Back office, pas à pas
 
-1. **Installation** : cliquez sur **Créer / compléter les tables**. L'opération est répétable sans danger : elle ne supprime et n'écrase rien. Elle crée les 6 tables du § 3, amorce 5 types (café, boisson, petit-déjeuner, repas midi, repas soir) et une ligne de configuration, puis règle l'affichage du **nom** dans les listes de choix.
+1. **Installation** : cliquez sur **Créer / compléter les tables**. L'opération est répétable sans danger : elle ne supprime et n'écrase rien. Elle crée les 7 tables du § 3, amorce 5 types (café, boisson, petit-déjeuner, repas midi, repas soir) et une ligne de configuration, puis règle l'affichage du **nom** dans les listes de choix.
 2. **Règlement** : titulaire, IBAN (clé de contrôle vérifiée), numéro Wero. Ces valeurs sont stockées dans la table `Conso_Config`.
    - Le QR code est un **virement SEPA** (norme EPC) prérempli avec le montant dû, lisible par les applications bancaires.
    - Wero ne publie pas de format de QR ouvert : pour un QR Wero, collez dans « Contenu du QR » le contenu du code « Recevoir » de l'application Wero. Il remplace alors le virement SEPA.
@@ -57,6 +57,20 @@ Onglet **Suivi → Enregistrer un règlement** : choisissez le consommateur (le 
 ### Modifier une ligne
 
 Chaque achat (onglet **Achats**), chaque règlement et chaque consommation (dans la fiche d'une personne) a un bouton **Modifier** à côté de **Supprimer**. La fenêtre reprend les valeurs actuelles : date, montant, observations, et pour une consommation le consommateur et les quantités de tous les types (y compris archivés). Les mêmes contrôles que pour la saisie s'appliquent, et l'on peut changer le consommateur d'un règlement ou d'une consommation saisi(e) pour la mauvaise personne. Après enregistrement, la fiche de la personne s'affiche à nouveau. La modification exige le droit de modification de la table (gestionnaire, § 4).
+
+### Gérer les stocks
+
+Onglet **Stocks** : le stock de chaque type de consommation est calculé **selon les consommations déclarées** :
+`stock = réapprovisionnements − pertes ± inventaires − consommations`.
+Chaque consommation (formulaire, saisie manuelle, en lot) diminue donc automatiquement le stock du type concerné.
+
+- **Réapprovisionnement / perte** : date, motif, et une quantité par type. Plusieurs types en une seule saisie ; une perte ou casse est enregistrée en négatif.
+- **Inventaire** : saisissez la quantité **comptée** ; l'écart avec le stock théorique est enregistré comme ajustement. À faire une première fois pour initialiser le stock (sans cela, les consommations passées donnent un stock négatif), puis périodiquement.
+- **Seuil d'alerte** par type (saisi dans le tableau) : sous ce seuil, le type passe en « Stock bas » et apparaît dans l'alerte « À réapprovisionner ». « Rupture » = stock à 0 ; « Négatif » = consommations supérieures aux entrées enregistrées (réapprovisionnement oublié : faites un inventaire). Un type jamais mouvementé ni consommé est « Non suivi » et ne déclenche pas d'alerte.
+- **Autonomie** : stock ÷ consommation moyenne par jour sur les 30 derniers jours, en jours ; « — » s'il n'y a pas de consommation récente.
+- Les mouvements sont listés et peuvent être supprimés (confirmation en deux clics).
+
+Les achats d'argent (onglet Achats) et les entrées de stock sont deux saisies **distinctes** : un achat de café s'enregistre dans Achats (le coût) et dans Stocks (les quantités reçues).
 
 ### Enregistrer les achats
 
@@ -116,6 +130,19 @@ Toutes les colonnes sont créées par le bouton. Les identifiants sont fixes (le
 | `Consommateur` | Référence → `Conso_Consommateurs` | Qui a payé |
 | `Montant` | Numérique | Euros |
 | `Observations` | Texte | Virement, espèces… |
+
+`Conso_Stocks` (saisie par le gestionnaire)
+
+| Colonne | Type | Contenu |
+|---|---|---|
+| `Date` | Date | Date du mouvement |
+| `Colonne` | Texte | Identifiant du type (`Conso_Types.Colonne`) |
+| `Libelle` | Texte | Libellé du type au moment de la saisie (lisibilité) |
+| `Quantite` | Numérique | Positive : entrée ; négative : perte ou ajustement |
+| `Motif` | Choix | Réapprovisionnement, Perte ou casse, Inventaire |
+| `Observations` | Texte | Bon de livraison, comptage… |
+
+`Conso_Types` reçoit une colonne `Seuil_alerte` (Numérique ; 0 ou vide : pas d'alerte).
 
 `Conso_Achats` (saisie par le gestionnaire)
 
@@ -188,7 +215,7 @@ La création reste ouverte à tous pour que le **formulaire public** fonctionne.
 | 1 | `user.Access == OWNER or user.Gestionnaire.id` | ✔ | ✔ | ✔ | ✔ |
 | 2 | *(vide)* | ✘ | ✘ | ✘ | ✘ |
 
-`Conso_Achats` : mêmes règles que `Conso_Reglements` (gestionnaire seul en lecture, modification, création et suppression ; règle 2 : tout refusé).
+`Conso_Achats` et `Conso_Stocks` : mêmes règles que `Conso_Reglements` (gestionnaire seul en lecture, modification, création et suppression ; règle 2 : tout refusé).
 
 Facultatif : pour masquer les courriels des consommateurs, ajoutez sur `Conso_Consommateurs`, **colonne `Email`**, en tête : condition `user.Access == OWNER or user.Gestionnaire.id` → lecture ✔ ; puis tout le monde → lecture ✘.
 
@@ -199,7 +226,7 @@ Dans la fenêtre des règles, utilisez **Voir en tant que** (utilisateur de test
 - [ ] Le gestionnaire (courriel de `Email_gestionnaire`) modifie `Conso_Config`, `Conso_Consommateurs`, `Conso_Types`.
 - [ ] Un autre utilisateur « éditeur » obtient un refus en modifiant, ajoutant ou supprimant une ligne de ces 3 tables. Dans le widget, un message « Droits insuffisants » s'affiche.
 - [ ] Le même utilisateur peut toujours **lire** `Conso_Config` : la page `?vue=regler` affiche le QR et l'IBAN.
-- [ ] Le même utilisateur ne peut ni modifier ni supprimer une consommation, et ne peut rien écrire dans `Conso_Reglements` ni `Conso_Achats`.
+- [ ] Le même utilisateur ne peut ni modifier ni supprimer une consommation, et ne peut rien écrire dans `Conso_Reglements` `Conso_Achats` ni `Conso_Stocks`.
 - [ ] **Navigation privée, sans compte** : l'envoi du formulaire (§ 5) fonctionne toujours et la ligne arrive dans `Conso_Consommations`.
 - [ ] Courriel du gestionnaire **vide ou erroné** : seuls les propriétaires modifient (comportement voulu, sans blocage).
 
@@ -251,7 +278,7 @@ Le formulaire public ne vérifie pas l'identité de la personne : il fait confia
 
 ## 7. Tests
 
-**Automatiques** : `node --test test/` (11 tests : soldes en centimes, achats, IBAN, QR SEPA, schéma, CSV, dates).
+**Automatiques** : `node --test test/` (13 tests : soldes en centimes, achats, stocks, IBAN, QR SEPA, schéma, CSV, dates).
 
 **À faire dans un vrai document Grist** (le faux Grist de `dev/` ne remplace pas Grist) :
 
